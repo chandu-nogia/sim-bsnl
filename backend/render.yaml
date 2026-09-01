@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: bsnl-sim-api
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_DB
+        value: bsnl_sim
+      - key: MONGODB_URI
+        sync: false
