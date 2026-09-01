@@ -60,7 +60,6 @@ class EntryTable extends StatelessWidget {
                   columns: [
                     const DataColumn(label: Text('#'), numeric: true),
                     const DataColumn(label: Text('Date')),
-                    const DataColumn(label: Text('S.No.'), numeric: true),
                     const DataColumn(label: Text('Name')),
                     const DataColumn(label: Text('Type')),
                     const DataColumn(label: Text('Mobile')),
@@ -100,12 +99,11 @@ class EntryTable extends StatelessWidget {
           ),
         ),
         DataCell(Text(e.date)),
-        DataCell(Text('${e.sno}')),
         DataCell(Text(e.name, style: const TextStyle(fontWeight: FontWeight.w600))),
         DataCell(_TypeChip(type: e.type)),
         DataCell(_Copyable(e.mobile)),
         DataCell(Text(e.altNumber.isEmpty ? '—' : e.altNumber)),
-        DataCell(Text(e.frc.isEmpty ? '—' : e.frc)),
+        DataCell(_FrcChip(frc: e.frc)),
         DataCell(_Copyable(e.simNo)),
         DataCell(Text(e.last6, style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]))),
         DataCell(
@@ -191,6 +189,24 @@ Future<void> confirmDeleteEntry(
   }
 }
 
+class _FrcChip extends StatelessWidget {
+  const _FrcChip({required this.frc});
+  final String frc;
+
+  @override
+  Widget build(BuildContext context) {
+    if (frc.isEmpty) return const Text('—');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: frcChipColor(frc),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(frc, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+    );
+  }
+}
+
 class _TypeChip extends StatelessWidget {
   const _TypeChip({required this.type});
   final SimType type;
@@ -247,8 +263,8 @@ class _MobileTile extends StatelessWidget {
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
         ),
       ),
-      title: Text('${e.sno}. ${e.name}', style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text('${e.mobile}  •  ${e.simNo}\n${e.date}'),
+      title: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text('${e.mobile}  •  FRC ${e.frc.isEmpty ? "—" : e.frc}\n${e.date}  •  ${e.simNo}'),
       isThreeLine: true,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

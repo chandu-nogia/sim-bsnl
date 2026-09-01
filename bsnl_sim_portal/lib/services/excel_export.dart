@@ -1,12 +1,11 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:web/web.dart' as web;
 
 import '../models/sim_entry.dart';
+import 'file_download.dart';
 
 Future<void> downloadSimExcel(
   BuildContext context,
@@ -23,7 +22,7 @@ Future<void> downloadSimExcel(
     final bytes = buildSimExcel(rows);
     final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
     final filename = 'BSNL_SIM_Register_$stamp.xlsx';
-    _triggerDownload(
+    triggerDownload(
       bytes,
       filename,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -54,7 +53,6 @@ Uint8List buildSimExcel(List<SimEntry> rows) {
   const headers = [
     '#',
     'Date',
-    'S.No.',
     'Name',
     'Type',
     'Mobile',
@@ -71,7 +69,6 @@ Uint8List buildSimExcel(List<SimEntry> rows) {
     sheet.appendRow([
       IntCellValue(i + 1),
       TextCellValue(e.date),
-      IntCellValue(e.sno),
       TextCellValue(e.name),
       TextCellValue(e.type.label),
       TextCellValue(e.mobile),
@@ -88,15 +85,4 @@ Uint8List buildSimExcel(List<SimEntry> rows) {
     throw StateError('Excel encode failed');
   }
   return Uint8List.fromList(encoded);
-}
-
-void _triggerDownload(Uint8List bytes, String filename, String mime) {
-  final href = 'data:$mime;base64,${base64Encode(bytes)}';
-  final anchor = web.HTMLAnchorElement()
-    ..href = href
-    ..download = filename
-    ..style.display = 'none';
-  web.document.body!.append(anchor);
-  anchor.click();
-  anchor.remove();
 }

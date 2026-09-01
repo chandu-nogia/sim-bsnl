@@ -44,6 +44,7 @@ function validate(row) {
   if (!/^\d{10}$/.test(row.mobile)) return '10 digit mobile';
   if (row.alt && !/^\d{10}$/.test(row.alt)) return 'Alternate number 10 digit';
   if (row.sim.length < 6) return 'SIM number likho';
+  if (row.frc && !/^[0-5]$/.test(row.frc)) return 'FRC 0, 1, 2, 3, 4 ya 5';
   return null;
 }
 

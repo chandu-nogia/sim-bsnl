@@ -18,7 +18,11 @@ class CtopupPage extends StatelessWidget {
         RecordField('name', 'Name'),
         RecordField('number', 'Number', keyboard: TextInputType.phone),
         RecordField('amount', 'Amount', keyboard: TextInputType.number),
-        RecordField('status', 'Status of payment'),
+        RecordField('status', 'Status of payment', kind: RecordFieldKind.choice, options: [
+          'Pending',
+          'Paid',
+          'Failed',
+        ]),
       ],
     );
   }

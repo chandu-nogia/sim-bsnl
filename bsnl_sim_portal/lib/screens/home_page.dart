@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../services/excel_export.dart';
+import '../services/pdf_export.dart';
 import '../state/sim_store.dart';
 import '../widgets/entry_form.dart';
 import '../widgets/entry_table.dart';
@@ -58,7 +59,21 @@ class HomePage extends StatelessWidget {
                 onPressed: store.filtered.isEmpty
                     ? null
                     : () => downloadSimExcel(context, store.filtered),
-                icon: const Icon(Icons.download_outlined),
+                icon: const Icon(Icons.table_view_outlined),
+              ),
+              IconButton(
+                tooltip: 'Download colorful PDF',
+                onPressed: store.filtered.isEmpty
+                    ? null
+                    : () => downloadSimPdf(context, store.filtered),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+              ),
+              IconButton(
+                tooltip: 'Share',
+                onPressed: store.filtered.isEmpty
+                    ? null
+                    : () => showSimShareSheet(context, store.filtered),
+                icon: const Icon(Icons.share_outlined),
               ),
               IconButton(
                 tooltip: 'Refresh',

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../models/sim_entry.dart';
 import '../services/excel_export.dart';
+import '../services/pdf_export.dart';
 import '../state/sim_store.dart';
 
 class StatCards extends StatelessWidget {
@@ -154,10 +155,10 @@ class FilterBar extends StatelessWidget {
                   labelText: 'FRC',
                   isDense: true,
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'All', child: Text('All')),
-                  DropdownMenuItem(value: '1', child: Text('1')),
-                  DropdownMenuItem(value: '2', child: Text('2')),
+                items: [
+                  const DropdownMenuItem(value: 'All', child: Text('All')),
+                  for (final v in frcChoices)
+                    DropdownMenuItem(value: v, child: Text(v)),
                 ],
                 onChanged: (v) => store.setFrcFilter(v ?? 'All'),
               ),
@@ -171,8 +172,22 @@ class FilterBar extends StatelessWidget {
               onPressed: store.filtered.isEmpty
                   ? null
                   : () => downloadSimExcel(context, store.filtered),
-              icon: const Icon(Icons.file_download_outlined),
+              icon: const Icon(Icons.table_view_outlined),
               label: const Text('Excel'),
+            ),
+            OutlinedButton.icon(
+              onPressed: store.filtered.isEmpty
+                  ? null
+                  : () => downloadSimPdf(context, store.filtered),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('PDF'),
+            ),
+            FilledButton.icon(
+              onPressed: store.filtered.isEmpty
+                  ? null
+                  : () => showSimShareSheet(context, store.filtered),
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share'),
             ),
             Text(
               '${store.filtered.length} / ${store.entries.length} rows',

@@ -23,6 +23,20 @@ enum SimType {
   }
 }
 
+const frcChoices = ['0', '1', '2', '3', '4', '5'];
+
+Color frcChipColor(String frc) {
+  return switch (frc) {
+    '0' => const Color(0xFFCFD8DC),
+    '1' => BsnlColors.cymn,
+    '2' => BsnlColors.mnp,
+    '3' => BsnlColors.issued,
+    '4' => BsnlColors.swap,
+    '5' => const Color(0xFFFFCDD2),
+    _ => const Color(0xFFEEEEEE),
+  };
+}
+
 class SimEntry {
   SimEntry({
     this.rowIndex,

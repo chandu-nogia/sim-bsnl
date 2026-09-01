@@ -4,36 +4,28 @@ import 'package:intl/intl.dart';
 import '../app_theme.dart';
 import '../models/sim_entry.dart';
 import '../state/sim_store.dart';
+import 'fade_in.dart';
 
 Future<void> showEntryForm(
   BuildContext context,
   SimStore store, {
   SimEntry? existing,
 }) async {
-  await showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: _EntryForm(store: store, existing: existing),
-      ),
-    ),
+  await Navigator.of(context).push<void>(
+    fadeRoute(_EntryFormPage(store: store, existing: existing)),
   );
 }
 
-class _EntryForm extends StatefulWidget {
-  const _EntryForm({required this.store, this.existing});
+class _EntryFormPage extends StatefulWidget {
+  const _EntryFormPage({required this.store, this.existing});
   final SimStore store;
   final SimEntry? existing;
 
   @override
-  State<_EntryForm> createState() => _EntryFormState();
+  State<_EntryFormPage> createState() => _EntryFormPageState();
 }
 
-class _EntryFormState extends State<_EntryForm> {
+class _EntryFormPageState extends State<_EntryFormPage> {
   final _form = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _mobile = TextEditingController();
@@ -57,7 +49,7 @@ class _EntryFormState extends State<_EntryForm> {
     _sim.text = e.simNo;
     _date = _parseDate(e.date);
     _type = e.type;
-    _frc = (e.frc == '1' || e.frc == '2') ? e.frc : '';
+    _frc = frcChoices.contains(e.frc) ? e.frc : '';
   }
 
   DateTime _parseDate(String raw) {
@@ -134,193 +126,187 @@ class _EntryFormState extends State<_EntryForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-      child: Form(
-        key: _form,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.sim_card, color: BsnlColors.navy),
-                const SizedBox(width: 10),
-                Text(
-                  _editing ? 'SIM entry edit' : 'Nayi SIM entry',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: BsnlColors.navy,
-                      ),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _saving ? null : () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _editing
-                  ? 'S.No. ${widget.existing!.sno}  •  ${widget.store.connected ? "Server par update" : "Local update"}'
-                  : 'S.No. ${widget.store.nextSno}  •  ${widget.store.connected ? "Server par turant save" : "Local save (Settings se server jodo)"}',
-              style: const TextStyle(color: BsnlColors.muted, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            Flexible(
-              child: SingleChildScrollView(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_editing ? 'Update SIM' : 'Add SIM'),
+      ),
+      body: FadeIn(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Form(
+                key: _form,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: _pickDate,
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Date',
-                                prefixIcon: Icon(Icons.event),
-                              ),
-                              child: Text(_dateText),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<SimType>(
-                            // ignore: deprecated_member_use
-                            value: _type,
-                            decoration: const InputDecoration(
-                              labelText: 'Type *',
-                            ),
-                            items: [
-                              for (final t in SimType.values)
-                                DropdownMenuItem(
-                                  value: t,
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 12,
-                                        height: 12,
-                                        decoration: BoxDecoration(
-                                          color: t.color,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Colors.black26,
-                                          ),
-                                        ),
+                    const Text(
+                      'Sirf is SIM ke fields — poori list yahan nahi dikhegi.',
+                      style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: _pickDate,
+                                    child: InputDecorator(
+                                      decoration: const InputDecoration(
+                                        labelText: 'Date',
+                                        prefixIcon: Icon(Icons.event),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Text(t.label),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        t.meaning,
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: BsnlColors.muted,
-                                        ),
-                                      ),
-                                    ],
+                                      child: Text(_dateText),
+                                    ),
                                   ),
                                 ),
-                            ],
-                            onChanged: (v) => setState(() => _type = v!),
-                          ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<SimType>(
+                                    // ignore: deprecated_member_use
+                                    value: _type,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Type *',
+                                    ),
+                                    items: [
+                                      for (final t in SimType.values)
+                                        DropdownMenuItem(
+                                          value: t,
+                                          child: Text('${t.label}  (${t.meaning})'),
+                                        ),
+                                    ],
+                                    onChanged: (v) => setState(() => _type = v!),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _name,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Name *',
+                                prefixIcon: Icon(Icons.person_outline),
+                              ),
+                              validator: (v) =>
+                                  (v == null || v.trim().isEmpty) ? 'Naam likho' : null,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _mobile,
+                                    keyboardType: TextInputType.phone,
+                                    maxLength: 10,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Mobile Number *',
+                                      counterText: '',
+                                      prefixIcon: Icon(Icons.phone_outlined),
+                                    ),
+                                    validator: (v) {
+                                      if (v == null || !RegExp(r'^\d{10}$').hasMatch(v)) {
+                                        return '10 digit mobile';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _alt,
+                                    keyboardType: TextInputType.phone,
+                                    maxLength: 10,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Alternate Number',
+                                      counterText: '',
+                                    ),
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) return null;
+                                      if (!RegExp(r'^\d{10}$').hasMatch(v)) {
+                                        return '10 digit';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _sim,
+                              onChanged: (_) => setState(() {}),
+                              decoration: const InputDecoration(
+                                labelText: 'SIM No. *',
+                                prefixIcon: Icon(Icons.sim_card_outlined),
+                              ),
+                              validator: (v) => (v == null || v.trim().length < 6)
+                                  ? 'SIM number likho'
+                                  : null,
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'SIM Last 6',
+                                    ),
+                                    child: Text(_last6.isEmpty ? '—' : _last6),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    // ignore: deprecated_member_use
+                                    value: _frc,
+                                    decoration: const InputDecoration(labelText: 'FRC'),
+                                    items: [
+                                      const DropdownMenuItem(value: '', child: Text('—')),
+                                      for (final v in frcChoices)
+                                        DropdownMenuItem(value: v, child: Text(v)),
+                                    ],
+                                    onChanged: (v) => setState(() => _frc = v ?? ''),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _name,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: 'Name *',
-                        prefixIcon: Icon(Icons.person_outline),
                       ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Naam likho' : null,
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _mobile,
-                            keyboardType: TextInputType.phone,
-                            maxLength: 10,
-                            decoration: const InputDecoration(
-                              labelText: 'Mobile Number *',
-                              counterText: '',
-                              prefixIcon: Icon(Icons.phone_outlined),
-                            ),
-                            validator: (v) {
-                              if (v == null || !RegExp(r'^\d{10}$').hasMatch(v)) {
-                                return '10 digit mobile';
-                              }
-                              return null;
-                            },
-                          ),
+                        Text(
+                          DateFormat('EEE, d MMM yyyy').format(_date),
+                          style: const TextStyle(color: BsnlColors.muted),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _alt,
-                            keyboardType: TextInputType.phone,
-                            maxLength: 10,
-                            decoration: const InputDecoration(
-                              labelText: 'Alternate Number',
-                              counterText: '',
-                            ),
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return null;
-                              if (!RegExp(r'^\d{10}$').hasMatch(v)) {
-                                return '10 digit';
-                              }
-                              return null;
-                            },
-                          ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: _saving ? null : () => Navigator.pop(context),
+                          child: const Text('Cancel'),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextFormField(
-                            controller: _sim,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'SIM No. *',
-                              prefixIcon: Icon(Icons.sim_card_outlined),
-                            ),
-                            validator: (v) => (v == null || v.trim().length < 6)
-                                ? 'SIM number likho'
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'SIM Last 6',
-                            ),
-                            child: Text(_last6.isEmpty ? '—' : _last6),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            // ignore: deprecated_member_use
-                            value: _frc,
-                            decoration: const InputDecoration(labelText: 'FRC'),
-                            items: const [
-                              DropdownMenuItem(value: '', child: Text('—')),
-                              DropdownMenuItem(value: '1', child: Text('1')),
-                              DropdownMenuItem(value: '2', child: Text('2')),
-                            ],
-                            onChanged: (v) => setState(() => _frc = v ?? ''),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : Icon(_editing ? Icons.save_outlined : Icons.add),
+                          label: Text(
+                            _saving
+                                ? (_editing ? 'Updating…' : 'Saving…')
+                                : (_editing ? 'Update' : 'Save'),
                           ),
                         ),
                       ],
@@ -329,37 +315,7 @@ class _EntryFormState extends State<_EntryForm> {
                 ),
               ),
             ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Text(
-                  DateFormat('EEE, d MMM yyyy').format(_date),
-                  style: const TextStyle(color: BsnlColors.muted),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: _saving ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: _saving ? null : _save,
-                  icon: _saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Icon(_editing ? Icons.save_outlined : Icons.cloud_upload_outlined),
-                  label: Text(
-                    _saving
-                        ? (_editing ? 'Updating…' : 'Saving…')
-                        : (_editing ? 'Update' : 'Save'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );

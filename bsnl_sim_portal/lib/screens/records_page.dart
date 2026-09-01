@@ -3,10 +3,11 @@ import 'package:intl/intl.dart';
 
 import '../app_theme.dart';
 import '../services/api_service.dart';
+import '../services/pdf_export.dart';
 import '../state/auth_store.dart';
 import '../widgets/fade_in.dart';
 
-enum RecordFieldKind { text, date }
+enum RecordFieldKind { text, date, choice }
 
 class RecordField {
   const RecordField(
@@ -14,11 +15,13 @@ class RecordField {
     this.label, {
     this.keyboard = TextInputType.text,
     this.kind = RecordFieldKind.text,
+    this.options = const [],
   });
   final String key;
   final String label;
   final TextInputType keyboard;
   final RecordFieldKind kind;
+  final List<String> options;
 }
 
 class RecordsPage extends StatefulWidget {
@@ -74,12 +77,13 @@ class _RecordsPageState extends State<RecordsPage> {
 
   Future<void> _save(Map<String, dynamic>? existing) async {
     if (!widget.auth.canWrite) return;
-    final body = await showDialog<Map<String, String>>(
-      context: context,
-      builder: (ctx) => _RecordEditor(
-        title: existing == null ? 'Add' : 'Update',
-        fields: widget.fields,
-        initial: existing,
+    final body = await Navigator.of(context).push<Map<String, String>>(
+      fadeRoute(
+        RecordFormPage(
+          title: existing == null ? 'Add ${widget.title}' : 'Update ${widget.title}',
+          fields: widget.fields,
+          initial: existing,
+        ),
       ),
     );
     if (body == null || !mounted) return;
@@ -129,6 +133,22 @@ class _RecordsPageState extends State<RecordsPage> {
     }
   }
 
+  Future<void> _pdf({required bool share}) async {
+    await downloadRecordsPdf(
+      context,
+      title: widget.title,
+      headers: ['S.No.', ...widget.fields.map((f) => f.label)],
+      rows: [
+        for (var i = 0; i < _rows.length; i++)
+          [
+            '${i + 1}',
+            for (final f in widget.fields) '${_rows[i][f.key] ?? ''}',
+          ],
+      ],
+      share: share,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canWrite = widget.auth.canWrite;
@@ -136,6 +156,16 @@ class _RecordsPageState extends State<RecordsPage> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          IconButton(
+            tooltip: 'Download colorful PDF',
+            onPressed: _loading || _rows.isEmpty ? null : () => _pdf(share: false),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+          ),
+          IconButton(
+            tooltip: 'Share PDF',
+            onPressed: _loading || _rows.isEmpty ? null : () => _pdf(share: true),
+            icon: const Icon(Icons.share_outlined),
+          ),
           IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -249,8 +279,9 @@ class _RecordsPageState extends State<RecordsPage> {
   }
 }
 
-class _RecordEditor extends StatefulWidget {
-  const _RecordEditor({
+class RecordFormPage extends StatefulWidget {
+  const RecordFormPage({
+    super.key,
     required this.title,
     required this.fields,
     this.initial,
@@ -260,25 +291,36 @@ class _RecordEditor extends StatefulWidget {
   final Map<String, dynamic>? initial;
 
   @override
-  State<_RecordEditor> createState() => _RecordEditorState();
+  State<RecordFormPage> createState() => _RecordFormPageState();
 }
 
-class _RecordEditorState extends State<_RecordEditor> {
+class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, TextEditingController> _ctrls;
   late final Map<String, DateTime> _dates;
+  late final Map<String, String> _choices;
 
   @override
   void initState() {
     super.initState();
     _ctrls = {
       for (final f in widget.fields)
-        if (f.kind != RecordFieldKind.date)
+        if (f.kind == RecordFieldKind.text)
           f.key: TextEditingController(text: '${widget.initial?[f.key] ?? ''}'),
     };
     _dates = {
       for (final f in widget.fields)
         if (f.kind == RecordFieldKind.date) f.key: parseRecordDate('${widget.initial?[f.key] ?? ''}'),
     };
+    _choices = {
+      for (final f in widget.fields)
+        if (f.kind == RecordFieldKind.choice)
+          f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
+    };
+  }
+
+  String _choiceValue(RecordField f, String raw) {
+    if (f.options.contains(raw)) return raw;
+    return f.options.isEmpty ? raw : f.options.first;
   }
 
   @override
@@ -292,9 +334,11 @@ class _RecordEditorState extends State<_RecordEditor> {
   Map<String, String> _body() {
     return {
       for (final f in widget.fields)
-        f.key: f.kind == RecordFieldKind.date
-            ? DateFormat('dd/MM/yyyy').format(_dates[f.key]!)
-            : _ctrls[f.key]!.text.trim(),
+        f.key: switch (f.kind) {
+          RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
+          RecordFieldKind.choice => _choices[f.key] ?? '',
+          RecordFieldKind.text => _ctrls[f.key]!.text.trim(),
+        },
     };
   }
 
@@ -310,45 +354,62 @@ class _RecordEditorState extends State<_RecordEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final f in widget.fields)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: f.kind == RecordFieldKind.date
-                      ? InkWell(
-                          onTap: () => _pick(f.key),
-                          child: InputDecorator(
-                            decoration: InputDecoration(
-                              labelText: f.label,
-                              suffixIcon: const Icon(Icons.calendar_month_outlined),
-                            ),
-                            child: Text(DateFormat('EEE, d MMM yyyy').format(_dates[f.key]!)),
-                          ),
-                        )
-                      : TextField(
-                          controller: _ctrls[f.key],
-                          keyboardType: f.keyboard,
-                          decoration: InputDecoration(labelText: f.label),
+    final adding = widget.initial == null;
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: FadeIn(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
+          children: [
+            Text(
+              adding ? 'Sirf is entry ke fields bharo — list yahan nahi dikhegi.' : 'Is entry ko update karo.',
+              style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
+            for (final f in widget.fields)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: switch (f.kind) {
+                  RecordFieldKind.date => InkWell(
+                      onTap: () => _pick(f.key),
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: f.label,
+                          suffixIcon: const Icon(Icons.calendar_month_outlined),
                         ),
-                ),
-            ],
-          ),
+                        child: Text(DateFormat('EEE, d MMM yyyy').format(_dates[f.key]!)),
+                      ),
+                    ),
+                  RecordFieldKind.choice => DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _choices[f.key],
+                      decoration: InputDecoration(labelText: f.label),
+                      items: [
+                        for (final o in f.options) DropdownMenuItem(value: o, child: Text(o)),
+                      ],
+                      onChanged: (v) => setState(() => _choices[f.key] = v ?? f.options.first),
+                    ),
+                  RecordFieldKind.text => TextField(
+                      controller: _ctrls[f.key],
+                      keyboardType: f.keyboard,
+                      decoration: InputDecoration(labelText: f.label),
+                    ),
+                },
+              ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, _body()),
+              icon: Icon(adding ? Icons.add : Icons.save_outlined),
+              label: Text(adding ? 'Save' : 'Update'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, _body()),
-          child: Text(widget.initial == null ? 'Save' : 'Update'),
-        ),
-      ],
     );
   }
 }
