@@ -6,35 +6,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/seed.dart';
 import '../models/sim_entry.dart';
 import '../services/api_service.dart';
+import 'auth_store.dart';
 
 class SimStore extends ChangeNotifier {
-  SimStore() {
-    load();
-  }
+  SimStore(this.auth);
 
-  final _api = ApiService();
+  final AuthStore auth;
+  ApiService get _api => auth.api;
 
   List<SimEntry> entries = [];
   String search = '';
   String typeFilter = 'All';
   String frcFilter = 'All';
-  String? apiUrl;
   bool useApi = true;
   bool loading = true;
   bool connected = false;
   String? error;
   String? statusMessage;
-
-  String get apiBase {
-    final saved = (apiUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
-    if (saved.isNotEmpty) return saved;
-    const defined = String.fromEnvironment('API_URL');
-    if (defined.trim().isNotEmpty) {
-      return defined.trim().replaceAll(RegExp(r'/+$'), '');
-    }
-    if (kReleaseMode) return 'https://bsnl-sim-api.onrender.com';
-    return 'http://localhost:5050';
-  }
+  bool get canWrite => auth.canWrite;
+  String get apiBase => auth.apiBase;
 
   List<SimEntry> get filtered {
     final q = search.trim().toLowerCase();
@@ -69,10 +59,6 @@ class SimStore extends ChangeNotifier {
     error = null;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    apiUrl = prefs.getString('apiUrl') ?? prefs.getString('scriptUrl');
-    if (apiUrl != null && apiUrl!.contains('script.google.com')) {
-      apiUrl = null;
-    }
     useApi = prefs.getBool('useApi') ?? true;
     try {
       if (useApi) {
@@ -124,14 +110,9 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> saveApiUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    apiUrl = url.trim().isEmpty ? null : url.trim().replaceAll(RegExp(r'/+$'), '');
+    await auth.saveApiUrl(url);
     useApi = true;
-    if (apiUrl == null) {
-      await prefs.remove('apiUrl');
-    } else {
-      await prefs.setString('apiUrl', apiUrl!);
-    }
+    final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('useApi', true);
     notifyListeners();
     await load();
@@ -181,6 +162,7 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> addEntry(SimEntry entry) async {
+    if (!canWrite) throw ApiException('Sirf admin add kar sakta hai');
     error = null;
     notifyListeners();
     try {
@@ -201,6 +183,7 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> updateEntry(SimEntry original, SimEntry updated) async {
+    if (!canWrite) throw ApiException('Sirf admin update kar sakta hai');
     error = null;
     notifyListeners();
     try {
@@ -223,6 +206,7 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> deleteEntry(SimEntry entry) async {
+    if (!canWrite) throw ApiException('Sirf admin delete kar sakta hai');
     error = null;
     notifyListeners();
     try {

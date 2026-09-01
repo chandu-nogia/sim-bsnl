@@ -70,23 +70,26 @@ class HomePage extends StatelessWidget {
                       )
                     : const Icon(Icons.refresh),
               ),
-              IconButton(
-                tooltip: 'Server setup',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => SettingsPage(store: store)),
-                  );
-                },
-                icon: const Icon(Icons.settings_outlined),
-              ),
+              if (store.canWrite)
+                IconButton(
+                  tooltip: 'Server setup',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => SettingsPage(store: store)),
+                    );
+                  },
+                  icon: const Icon(Icons.settings_outlined),
+                ),
               const SizedBox(width: 8),
             ],
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => showEntryForm(context, store),
-            icon: const Icon(Icons.add),
-            label: const Text('Add SIM'),
-          ),
+          floatingActionButton: store.canWrite
+              ? FloatingActionButton.extended(
+                  onPressed: () => showEntryForm(context, store),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add SIM'),
+                )
+              : null,
           body: Column(
             children: [
               if (store.statusMessage != null)

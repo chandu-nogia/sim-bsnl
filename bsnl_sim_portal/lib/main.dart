@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
-import 'screens/home_page.dart';
+import 'screens/dashboard_page.dart';
+import 'screens/login_page.dart';
+import 'state/auth_store.dart';
 import 'state/sim_store.dart';
 
 void main() {
@@ -17,21 +19,36 @@ class BsnlSimApp extends StatefulWidget {
 }
 
 class _BsnlSimAppState extends State<BsnlSimApp> {
-  final store = SimStore();
+  final auth = AuthStore();
+  late final SimStore store = SimStore(auth);
 
   @override
   void dispose() {
     store.dispose();
+    auth.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BSNL SIM Portal',
+      title: 'BSNL Portal',
       debugShowCheckedModeBanner: false,
       theme: buildBsnlTheme(),
-      home: HomePage(store: store),
+      home: AnimatedBuilder(
+        animation: auth,
+        builder: (context, _) {
+          if (auth.loading) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (!auth.isLoggedIn) {
+            return LoginPage(auth: auth);
+          }
+          return DashboardPage(auth: auth, simStore: store);
+        },
+      ),
     );
   }
 }

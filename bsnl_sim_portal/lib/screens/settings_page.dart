@@ -20,7 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    _url = TextEditingController(text: widget.store.apiUrl ?? widget.store.apiBase);
+    _url = TextEditingController(text: widget.store.auth.apiUrl ?? widget.store.apiBase);
   }
 
   @override

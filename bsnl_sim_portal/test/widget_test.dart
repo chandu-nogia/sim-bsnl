@@ -10,6 +10,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const BsnlSimApp());
     await tester.pump();
-    expect(find.text('BSNL SIM Portal'), findsOneWidget);
+    expect(find.text('BSNL Portal Login'), findsOneWidget);
   });
 }

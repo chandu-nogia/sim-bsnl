@@ -14,13 +14,13 @@ class EntryTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = store.filtered;
     if (rows.isEmpty) {
-      return const Card(
+      return Card(
         child: Padding(
-          padding: EdgeInsets.all(40),
+          padding: const EdgeInsets.all(40),
           child: Center(
             child: Text(
-              'Koi entry nahi — filter hatao ya Add SIM dabao',
-              style: TextStyle(color: BsnlColors.muted),
+              'Koi entry nahi — filter hatao${store.canWrite ? " ya Add SIM dabao" : ""}',
+              style: const TextStyle(color: BsnlColors.muted),
             ),
           ),
         ),
@@ -56,19 +56,19 @@ class EntryTable extends StatelessWidget {
                   ),
                   dataRowMinHeight: 48,
                   dataRowMaxHeight: 56,
-                  columns: const [
-                    DataColumn(label: Text('#'), numeric: true),
-                    DataColumn(label: Text('Date')),
-                    DataColumn(label: Text('S.No.'), numeric: true),
-                    DataColumn(label: Text('Name')),
-                    DataColumn(label: Text('Type')),
-                    DataColumn(label: Text('Mobile')),
-                    DataColumn(label: Text('Alt. No.')),
-                    DataColumn(label: Text('FRC')),
-                    DataColumn(label: Text('SIM No.')),
-                    DataColumn(label: Text('Last 6')),
-                    DataColumn(label: Text('Status')),
-                    DataColumn(label: Text('Actions')),
+                  columns: [
+                    const DataColumn(label: Text('#'), numeric: true),
+                    const DataColumn(label: Text('Date')),
+                    const DataColumn(label: Text('S.No.'), numeric: true),
+                    const DataColumn(label: Text('Name')),
+                    const DataColumn(label: Text('Type')),
+                    const DataColumn(label: Text('Mobile')),
+                    const DataColumn(label: Text('Alt. No.')),
+                    const DataColumn(label: Text('FRC')),
+                    const DataColumn(label: Text('SIM No.')),
+                    const DataColumn(label: Text('Last 6')),
+                    const DataColumn(label: Text('Status')),
+                    if (store.canWrite) const DataColumn(label: Text('Actions')),
                   ],
                   rows: [
                     for (var i = 0; i < rows.length; i++)
@@ -117,7 +117,7 @@ class EntryTable extends StatelessWidget {
             child: Text(e.status, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
           ),
         ),
-        DataCell(_RowActions(store: store, entry: e)),
+        if (store.canWrite) DataCell(_RowActions(store: store, entry: e)),
       ],
     );
   }
@@ -253,19 +253,20 @@ class _MobileTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _TypeChip(type: e.type),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'edit') {
-                showEntryForm(context, store, existing: e);
-              } else if (v == 'delete') {
-                confirmDeleteEntry(context, store, e);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Edit')),
-              PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
-          ),
+          if (store.canWrite)
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'edit') {
+                  showEntryForm(context, store, existing: e);
+                } else if (v == 'delete') {
+                  confirmDeleteEntry(context, store, e);
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
         ],
       ),
     );
