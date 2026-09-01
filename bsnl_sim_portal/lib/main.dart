@@ -38,15 +38,25 @@ class _BsnlSimAppState extends State<BsnlSimApp> {
       home: AnimatedBuilder(
         animation: auth,
         builder: (context, _) {
+          Widget page;
           if (auth.loading) {
-            return const Scaffold(
+            page = const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
+          } else if (!auth.isLoggedIn) {
+            page = LoginPage(auth: auth);
+          } else {
+            page = DashboardPage(auth: auth, simStore: store);
           }
-          if (!auth.isLoggedIn) {
-            return LoginPage(auth: auth);
-          }
-          return DashboardPage(auth: auth, simStore: store);
+          return AnimatedSwitcher(
+            duration: const Duration(milliseconds: 380),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: KeyedSubtree(
+              key: ValueKey('${auth.loading}-${auth.isLoggedIn}'),
+              child: page,
+            ),
+          );
         },
       ),
     );

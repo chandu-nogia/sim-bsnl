@@ -14,6 +14,7 @@ class CbcPage extends StatelessWidget {
       title: 'CBC List',
       path: '/api/cbc',
       fields: const [
+        RecordField('date', 'Date', kind: RecordFieldKind.date),
         RecordField('name', 'Name'),
         RecordField('mobile', 'Mobile Number', keyboard: TextInputType.phone),
         RecordField('landline', 'Landline No.', keyboard: TextInputType.phone),

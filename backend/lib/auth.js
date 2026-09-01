@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'chandu@gmail.com').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu20';
 const EMPLOYEE_EMAIL = (process.env.EMPLOYEE_EMAIL || 'csckhatu@gmail.com').trim().toLowerCase();
 const EMPLOYEE_PASSWORD = process.env.EMPLOYEE_PASSWORD || 'csckhatu@25';
 

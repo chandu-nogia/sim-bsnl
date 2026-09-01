@@ -15,6 +15,7 @@ function publicCbc(row) {
   return {
     id,
     rowIndex: id,
+    date: row.date || '',
     name: row.name || '',
     mobile: row.mobile || '',
     landline: row.landline || '',
@@ -26,6 +27,7 @@ function publicCbc(row) {
 function pickCbc(body) {
   const b = body && typeof body === 'object' ? body : {};
   return {
+    date: String(b.date ?? '').trim(),
     name: String(b.name ?? '').trim(),
     mobile: String(b.mobile ?? '').trim(),
     landline: String(b.landline ?? '').trim(),
@@ -35,6 +37,7 @@ function pickCbc(body) {
 }
 
 function validateCbc(row) {
+  if (!row.date) return 'Date choose karo';
   if (!row.name) return 'Naam likho';
   if (!/^\d{10}$/.test(row.mobile)) return '10 digit mobile';
   if (row.landline && !/^\d{6,15}$/.test(row.landline)) return 'Landline number galat';
@@ -48,6 +51,7 @@ function publicCtopup(row) {
   return {
     id,
     rowIndex: id,
+    date: row.date || '',
     name: row.name || '',
     number: row.number || '',
     amount: row.amount || '',
@@ -58,6 +62,7 @@ function publicCtopup(row) {
 function pickCtopup(body) {
   const b = body && typeof body === 'object' ? body : {};
   return {
+    date: String(b.date ?? '').trim(),
     name: String(b.name ?? '').trim(),
     number: String(b.number ?? b.mobile ?? '').trim(),
     amount: String(b.amount ?? '').trim(),
@@ -66,6 +71,7 @@ function pickCtopup(body) {
 }
 
 function validateCtopup(row) {
+  if (!row.date) return 'Date choose karo';
   if (!row.name) return 'Naam likho';
   if (!/^\d{10}$/.test(row.number)) return '10 digit number';
   if (!row.amount) return 'Amount likho';

@@ -48,6 +48,7 @@ class EntryTable extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: box.maxWidth),
                 child: DataTable(
+                  border: TableBorder.all(color: const Color(0xFF94A3B8), width: 1),
                   headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
                   headingTextStyle: const TextStyle(
                     color: Colors.white,

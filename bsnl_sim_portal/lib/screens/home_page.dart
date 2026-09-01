@@ -5,6 +5,7 @@ import '../services/excel_export.dart';
 import '../state/sim_store.dart';
 import '../widgets/entry_form.dart';
 import '../widgets/entry_table.dart';
+import '../widgets/fade_in.dart';
 import '../widgets/filters.dart';
 import 'settings_page.dart';
 
@@ -74,9 +75,7 @@ class HomePage extends StatelessWidget {
                 IconButton(
                   tooltip: 'Server setup',
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => SettingsPage(store: store)),
-                    );
+                    Navigator.of(context).push(fadeRoute(SettingsPage(store: store)));
                   },
                   icon: const Icon(Icons.settings_outlined),
                 ),
@@ -114,11 +113,19 @@ class HomePage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 88),
                   child: Column(
                     children: [
-                      StatCards(store: store),
+                      FadeIn(child: StatCards(store: store)),
                       const SizedBox(height: 12),
-                      FilterBar(store: store),
+                      FadeIn(
+                        delay: const Duration(milliseconds: 80),
+                        child: FilterBar(store: store),
+                      ),
                       const SizedBox(height: 12),
-                      Expanded(child: EntryTable(store: store)),
+                      Expanded(
+                        child: FadeIn(
+                          delay: const Duration(milliseconds: 140),
+                          child: EntryTable(store: store),
+                        ),
+                      ),
                     ],
                   ),
                 ),

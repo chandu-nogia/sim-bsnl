@@ -12,6 +12,7 @@ class BsnlColors {
   static const swap = Color(0xFFE1BEE7);
   static const postpaid = Color(0xFFFFF59D);
   static const issued = Color(0xFFC8E6C9);
+  static const gold = Color(0xFFFFC107);
 }
 
 ThemeData buildBsnlTheme() {
@@ -26,6 +27,12 @@ ThemeData buildBsnlTheme() {
   return base.copyWith(
     textTheme: text,
     scaffoldBackgroundColor: BsnlColors.page,
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: {
+        for (final p in TargetPlatform.values)
+          p: const FadeUpwardsPageTransitionsBuilder(),
+      },
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: BsnlColors.navy,
       foregroundColor: Colors.white,
@@ -58,6 +65,22 @@ ThemeData buildBsnlTheme() {
         borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
+    ),
+  );
+}
+
+BoxDecoration bsnlPageGradient() {
+  return const BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFF071A3A),
+        Color(0xFF0B3D91),
+        Color(0xFF1A5FBF),
+        Color(0xFFF3F6FB),
+      ],
+      stops: [0, 0.28, 0.48, 0.48],
     ),
   );
 }

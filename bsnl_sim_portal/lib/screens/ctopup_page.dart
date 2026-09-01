@@ -14,6 +14,7 @@ class CtopupPage extends StatelessWidget {
       title: 'CTopup',
       path: '/api/ctopup',
       fields: const [
+        RecordField('date', 'Date', kind: RecordFieldKind.date),
         RecordField('name', 'Name'),
         RecordField('number', 'Number', keyboard: TextInputType.phone),
         RecordField('amount', 'Amount', keyboard: TextInputType.number),
