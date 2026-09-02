@@ -7,9 +7,10 @@ const { logActivity } = require('./activity');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'chandu@gmail.com').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu20';
-const EMPLOYEE_EMAIL = (process.env.EMPLOYEE_EMAIL || 'csckhatu@gmail.com').trim().toLowerCase();
-const EMPLOYEE_PASSWORD = process.env.EMPLOYEE_PASSWORD || 'csckhatu@25';
+const EMPLOYEE_EMAIL = (process.env.EMPLOYEE_EMAIL || 'chandu20@gmail.com').trim().toLowerCase();
+const EMPLOYEE_PASSWORD = process.env.EMPLOYEE_PASSWORD || 'chandu@20khatu';
 const DEFAULT_LOCATION = process.env.DEFAULT_LOCATION_NAME || 'Khatu';
+const OLD_KHATU_EMAILS = ['csckhatu@gmail.com'];
 
 function authSecret() {
   return process.env.AUTH_SECRET || 'bsnl-sim-portal-change-me';
@@ -36,7 +37,13 @@ function publicLocation(row) {
 
 async function seedUsers(db) {
   const locCol = db.collection('locations');
-  let khatu = await locCol.findOne({ $or: [{ name: DEFAULT_LOCATION }, { email: EMPLOYEE_EMAIL }] });
+  let khatu = await locCol.findOne({
+    $or: [
+      { name: DEFAULT_LOCATION },
+      { email: EMPLOYEE_EMAIL },
+      { email: { $in: OLD_KHATU_EMAILS } },
+    ],
+  });
   if (!khatu) {
     const id = await nextId(db, 'locations');
     khatu = {
@@ -46,8 +53,12 @@ async function seedUsers(db) {
       createdAt: new Date().toISOString(),
     };
     await locCol.insertOne(khatu);
-  } else if (!khatu.email) {
-    await locCol.updateOne({ id: khatu.id }, { $set: { email: EMPLOYEE_EMAIL } });
+  } else {
+    await locCol.updateOne(
+      { id: khatu.id },
+      { $set: { name: DEFAULT_LOCATION, email: EMPLOYEE_EMAIL } },
+    );
+    khatu.name = DEFAULT_LOCATION;
     khatu.email = EMPLOYEE_EMAIL;
   }
 
@@ -67,6 +78,11 @@ async function seedUsers(db) {
     { upsert: true },
   );
 
+  await users.deleteMany({
+    email: { $in: OLD_KHATU_EMAILS },
+    role: 'employee',
+  });
+
   await users.updateOne(
     { email: EMPLOYEE_EMAIL },
     {
@@ -85,7 +101,15 @@ async function seedUsers(db) {
   const locId = Number(khatu.id);
   for (const col of ['sims', 'cbc', 'ctopup']) {
     await db.collection(col).updateMany(
-      { $or: [{ locationId: { $exists: false } }, { locationId: null }, { locationId: 0 }] },
+      {
+        $or: [
+          { locationId: { $exists: false } },
+          { locationId: null },
+          { locationId: 0 },
+          { locationName: DEFAULT_LOCATION },
+          { locationId: locId },
+        ],
+      },
       { $set: { locationId: locId, locationName: khatu.name } },
     );
   }
