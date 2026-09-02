@@ -1,20 +1,15 @@
 'use strict';
 
-async function nextId(db, key) {
-  const result = await db.collection('counters').findOneAndUpdate(
-    { _id: key },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: 'after' },
-  );
-  const seq = result && (result.seq ?? result.value?.seq);
-  return Number(seq) || 1;
-}
+const { nextId } = require('./ids');
+const { logActivity } = require('./activity');
 
 function publicCbc(row) {
   const id = Number(row.id);
   return {
     id,
     rowIndex: id,
+    locationId: row.locationId ? Number(row.locationId) : null,
+    locationName: row.locationName || '',
     date: row.date || '',
     name: row.name || '',
     mobile: row.mobile || '',
@@ -51,6 +46,8 @@ function publicCtopup(row) {
   return {
     id,
     rowIndex: id,
+    locationId: row.locationId ? Number(row.locationId) : null,
+    locationName: row.locationName || '',
     date: row.date || '',
     name: row.name || '',
     number: row.number || '',
@@ -78,46 +75,90 @@ function validateCtopup(row) {
   return null;
 }
 
-function makeCrud(collection, pick, validate, toPublic) {
+function makeCrud(collection, pick, validate, toPublic, section) {
   return {
-    async list(db) {
-      const rows = await db.collection(collection).find().sort({ id: 1 }).toArray();
+    async list(db, scope = {}) {
+      const q = {};
+      if (scope.locationId) q.locationId = Number(scope.locationId);
+      const rows = await db.collection(collection).find(q).sort({ id: 1 }).toArray();
       return rows.map(toPublic);
     },
-    async add(db, body) {
+    async add(db, body, meta) {
       const row = pick(body);
       const err = validate(row);
       if (err) return { status: 400, json: { ok: false, error: err } };
       const id = await nextId(db, collection);
-      const saved = { id, ...row };
+      const saved = {
+        id,
+        ...row,
+        locationId: Number(meta.locationId),
+        locationName: meta.locationName || '',
+        createdAt: new Date().toISOString(),
+      };
       await db.collection(collection).insertOne(saved);
+      await logActivity(db, {
+        email: meta.email,
+        role: meta.role,
+        action: 'add',
+        section,
+        locationId: saved.locationId,
+        locationName: saved.locationName,
+        detail: `${row.name} add`,
+      });
       return { status: 200, json: { ok: true, row: toPublic(saved) } };
     },
-    async update(db, idRaw, body) {
+    async update(db, idRaw, body, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
       if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
       const existing = await db.collection(collection).findOne({ id });
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
+      const blocked = await assertRow(existing);
+      if (blocked) return blocked;
       const row = pick({ ...toPublic(existing), ...body });
       const err = validate(row);
       if (err) return { status: 400, json: { ok: false, error: err } };
-      const saved = { ...row, id };
+      const saved = {
+        ...row,
+        id,
+        locationId: existing.locationId,
+        locationName: existing.locationName || meta.locationName || '',
+        createdAt: existing.createdAt || '',
+      };
       await db.collection(collection).updateOne({ id }, { $set: saved });
+      await logActivity(db, {
+        email: meta.email,
+        role: meta.role,
+        action: 'update',
+        section,
+        locationId: saved.locationId,
+        locationName: saved.locationName,
+        detail: `${row.name} update`,
+      });
       return { status: 200, json: { ok: true, row: toPublic(saved) } };
     },
-    async remove(db, idRaw) {
+    async remove(db, idRaw, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
       if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-      const result = await db.collection(collection).deleteOne({ id });
-      if (!result.deletedCount) {
-        return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
-      }
+      const existing = await db.collection(collection).findOne({ id });
+      if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
+      const blocked = await assertRow(existing);
+      if (blocked) return blocked;
+      await db.collection(collection).deleteOne({ id });
+      await logActivity(db, {
+        email: meta.email,
+        role: meta.role,
+        action: 'delete',
+        section,
+        locationId: existing.locationId,
+        locationName: existing.locationName || '',
+        detail: `${existing.name || id} delete`,
+      });
       return { status: 200, json: { ok: true } };
     },
   };
 }
 
-const cbc = makeCrud('cbc', pickCbc, validateCbc, publicCbc);
-const ctopup = makeCrud('ctopup', pickCtopup, validateCtopup, publicCtopup);
+const cbc = makeCrud('cbc', pickCbc, validateCbc, publicCbc, 'cbc');
+const ctopup = makeCrud('ctopup', pickCtopup, validateCtopup, publicCtopup, 'ctopup');
 
 module.exports = { cbc, ctopup };

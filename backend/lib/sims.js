@@ -1,10 +1,15 @@
 'use strict';
 
+const { nextId } = require('./ids');
+const { logActivity } = require('./activity');
+
 function publicRow(row) {
   const id = Number(row.id);
   return {
     id,
     rowIndex: id,
+    locationId: row.locationId ? Number(row.locationId) : null,
+    locationName: row.locationName || '',
     date: row.date || '',
     sno: row.sno ?? 0,
     name: row.name || '',
@@ -48,55 +53,90 @@ function validate(row) {
   return null;
 }
 
-async function nextId(db) {
-  const result = await db.collection('counters').findOneAndUpdate(
-    { _id: 'sims' },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: 'after' },
-  );
-  const seq = result && (result.seq ?? result.value?.seq);
-  return Number(seq) || 1;
-}
-
-async function listSims(db) {
-  const rows = await db.collection('sims').find().sort({ id: 1 }).toArray();
+async function listSims(db, scope = {}) {
+  const q = {};
+  if (scope.locationId) q.locationId = Number(scope.locationId);
+  const rows = await db.collection('sims').find(q).sort({ id: 1 }).toArray();
   return rows.map(publicRow);
 }
 
-async function addSim(db, body) {
+async function addSim(db, body, meta) {
   const row = pickBody(body);
   const err = validate(row);
   if (err) return { status: 400, json: { ok: false, error: err } };
   if (!row.sno) {
-    const last = await db.collection('sims').find().sort({ sno: -1 }).limit(1).next();
+    const q = { locationId: Number(meta.locationId) };
+    const last = await db.collection('sims').find(q).sort({ sno: -1 }).limit(1).next();
     row.sno = (last && Number(last.sno) ? Number(last.sno) : 0) + 1;
   }
-  const id = await nextId(db);
-  const saved = { id, ...row };
+  const id = await nextId(db, 'sims');
+  const saved = {
+    id,
+    ...row,
+    locationId: Number(meta.locationId),
+    locationName: meta.locationName || '',
+    createdAt: new Date().toISOString(),
+  };
   await db.collection('sims').insertOne(saved);
+  await logActivity(db, {
+    email: meta.email,
+    role: meta.role,
+    action: 'add',
+    section: 'sim',
+    locationId: saved.locationId,
+    locationName: saved.locationName,
+    detail: `${row.name} SIM add`,
+  });
   return { status: 200, json: { ok: true, row: publicRow(saved) } };
 }
 
-async function updateSim(db, idRaw, body) {
+async function updateSim(db, idRaw, body, meta, assertRow) {
   const id = Number.parseInt(String(idRaw), 10);
   if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
   const existing = await db.collection('sims').findOne({ id });
   if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
+  const blocked = await assertRow(existing);
+  if (blocked) return blocked;
   const row = pickBody({ ...publicRow(existing), ...body });
   const err = validate(row);
   if (err) return { status: 400, json: { ok: false, error: err } };
-  const saved = { ...row, id };
+  const saved = {
+    ...row,
+    id,
+    locationId: existing.locationId,
+    locationName: existing.locationName || meta.locationName || '',
+    createdAt: existing.createdAt || '',
+  };
   await db.collection('sims').updateOne({ id }, { $set: saved });
+  await logActivity(db, {
+    email: meta.email,
+    role: meta.role,
+    action: 'update',
+    section: 'sim',
+    locationId: saved.locationId,
+    locationName: saved.locationName,
+    detail: `${row.name} SIM update`,
+  });
   return { status: 200, json: { ok: true, row: publicRow(saved) } };
 }
 
-async function deleteSim(db, idRaw) {
+async function deleteSim(db, idRaw, meta, assertRow) {
   const id = Number.parseInt(String(idRaw), 10);
   if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-  const result = await db.collection('sims').deleteOne({ id });
-  if (!result.deletedCount) {
-    return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
-  }
+  const existing = await db.collection('sims').findOne({ id });
+  if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
+  const blocked = await assertRow(existing);
+  if (blocked) return blocked;
+  await db.collection('sims').deleteOne({ id });
+  await logActivity(db, {
+    email: meta.email,
+    role: meta.role,
+    action: 'delete',
+    section: 'sim',
+    locationId: existing.locationId,
+    locationName: existing.locationName || '',
+    detail: `${existing.name || id} SIM delete`,
+  });
   return { status: 200, json: { ok: true } };
 }
 

@@ -31,12 +31,16 @@ class RecordsPage extends StatefulWidget {
     required this.title,
     required this.path,
     required this.fields,
+    this.locationId,
+    this.locationName,
   });
 
   final AuthStore auth;
   final String title;
   final String path;
   final List<RecordField> fields;
+  final int? locationId;
+  final String? locationName;
 
   @override
   State<RecordsPage> createState() => _RecordsPageState();
@@ -59,7 +63,11 @@ class _RecordsPageState extends State<RecordsPage> {
       _error = null;
     });
     try {
-      final rows = await widget.auth.api.listRows(widget.auth.apiBase, widget.path);
+      final rows = await widget.auth.api.listRows(
+        widget.auth.apiBase,
+        widget.path,
+        locationId: widget.locationId,
+      );
       setState(() => _rows = rows);
     } catch (e) {
       setState(() => _error = '$e');
@@ -90,10 +98,10 @@ class _RecordsPageState extends State<RecordsPage> {
     try {
       final id = existing == null ? null : _idOf(existing);
       if (existing == null) {
-        await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body);
+        await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: widget.locationId);
       } else {
         if (id == null) throw ApiException('Entry id nahi mili');
-        await widget.auth.api.updateRow(widget.auth.apiBase, widget.path, id, body);
+        await widget.auth.api.updateRow(widget.auth.apiBase, widget.path, id, body, locationId: widget.locationId);
       }
       await _load();
     } catch (e) {
@@ -124,7 +132,7 @@ class _RecordsPageState extends State<RecordsPage> {
     );
     if (ok != true || !mounted) return;
     try {
-      await widget.auth.api.deleteRow(widget.auth.apiBase, widget.path, id);
+      await widget.auth.api.deleteRow(widget.auth.apiBase, widget.path, id, locationId: widget.locationId);
       await _load();
     } catch (e) {
       if (mounted) {
@@ -154,7 +162,11 @@ class _RecordsPageState extends State<RecordsPage> {
     final canWrite = widget.auth.canWrite;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(
+          widget.locationName == null || widget.locationName!.isEmpty
+              ? widget.title
+              : '${widget.title}  •  ${widget.locationName}',
+        ),
         actions: [
           IconButton(
             tooltip: 'Download colorful PDF',

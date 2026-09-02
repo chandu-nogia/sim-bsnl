@@ -9,8 +9,25 @@ const cors = require('cors');
 
 const { getDb } = require('./lib/db');
 const { listSims, addSim, updateSim, deleteSim } = require('./lib/sims');
-const { seedUsers, login, requireUser, requireAdmin } = require('./lib/auth');
+const {
+  seedUsers,
+  login,
+  requireUser,
+  requireAdmin,
+  publicUser,
+  signToken,
+  listScope,
+  writeScope,
+  assertRowLocation,
+  listLocations,
+  addLocation,
+  updateLocation,
+  deleteLocation,
+  locationNameOf,
+} = require('./lib/auth');
 const { cbc, ctopup } = require('./lib/records');
+const { listActivity } = require('./lib/activity');
+const { adminSummary } = require('./lib/summary');
 
 const PORT = Number(process.env.PORT) || 5050;
 const WEB_DIR = path.join(__dirname, '..', 'bsnl_sim_portal', 'build', 'web');
@@ -26,6 +43,28 @@ app.use(express.json({ limit: '1mb' }));
 
 function send(res, out) {
   res.status(out.status).json(out.json);
+}
+
+function scoped(req) {
+  const s = listScope(req);
+  if (s.error) return { ok: false, status: s.status || 400, error: s.error };
+  return { ok: true, ...s };
+}
+
+async function writeMeta(req, body) {
+  const s = writeScope(req, body || {});
+  if (s.error) return { ok: false, status: s.status || 400, error: s.error };
+  const db = await getDb();
+  const locationName = s.locationName || (await locationNameOf(db, s.locationId));
+  return {
+    ok: true,
+    meta: {
+      locationId: s.locationId,
+      locationName,
+      email: req.user.email,
+      role: req.user.role,
+    },
+  };
 }
 
 app.get('/api/ready', (_req, res) => {
@@ -49,67 +88,141 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-app.get('/api/me', requireUser, (req, res) => {
-  res.json({ ok: true, user: req.user });
-});
-
-app.get('/api/sims', requireUser, async (_req, res) => {
+app.get('/api/me', requireUser, async (req, res) => {
   try {
-    send(res, { status: 200, json: { ok: true, rows: await listSims(await getDb()) } });
+    const db = await getDb();
+    const user = await db.collection('users').findOne({ email: req.user.email });
+    if (!user) return res.status(401).json({ ok: false, error: 'Login karo' });
+    res.json({ ok: true, user: publicUser(user), token: signToken(user) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-app.post('/api/sims', requireUser, requireAdmin, async (req, res) => {
+app.get('/api/locations', requireUser, async (req, res) => {
   try {
-    send(res, await addSim(await getDb(), req.body));
+    const rows = await listLocations(await getDb(), req.user);
+    res.json({ ok: true, rows });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-app.put('/api/sims/:id', requireUser, requireAdmin, async (req, res) => {
+app.post('/api/locations', requireUser, requireAdmin, async (req, res) => {
   try {
-    send(res, await updateSim(await getDb(), req.params.id, req.body));
+    send(res, await addLocation(await getDb(), req.user, req.body));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-app.delete('/api/sims/:id', requireUser, requireAdmin, async (req, res) => {
+app.put('/api/locations/:id', requireUser, requireAdmin, async (req, res) => {
   try {
-    send(res, await deleteSim(await getDb(), req.params.id));
+    send(res, await updateLocation(await getDb(), req.user, req.params.id, req.body));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.delete('/api/locations/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    send(res, await deleteLocation(await getDb(), req.user, req.params.id));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/summary', requireUser, requireAdmin, async (_req, res) => {
+  try {
+    const summary = await adminSummary(await getDb());
+    res.json({ ok: true, ...summary });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/activity', requireUser, async (req, res) => {
+  try {
+    const rows = await listActivity(await getDb(), req.user, req.query.limit);
+    res.json({ ok: true, rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/sims', requireUser, async (req, res) => {
+  try {
+    const s = scoped(req);
+    if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+    send(res, { status: 200, json: { ok: true, rows: await listSims(await getDb(), s) } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/sims', requireUser, async (req, res) => {
+  try {
+    const w = await writeMeta(req, req.body);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await addSim(await getDb(), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.put('/api/sims/:id', requireUser, async (req, res) => {
+  try {
+    const w = await writeMeta(req, req.body);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await updateSim(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row)));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.delete('/api/sims/:id', requireUser, async (req, res) => {
+  try {
+    const w = await writeMeta(req, { locationId: req.query.locationId });
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await deleteSim(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row)));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
 function mountCrud(prefix, api) {
-  app.get(prefix, requireUser, async (_req, res) => {
+  app.get(prefix, requireUser, async (req, res) => {
     try {
-      send(res, { status: 200, json: { ok: true, rows: await api.list(await getDb()) } });
+      const s = scoped(req);
+      if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+      send(res, { status: 200, json: { ok: true, rows: await api.list(await getDb(), s) } });
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
   });
-  app.post(prefix, requireUser, requireAdmin, async (req, res) => {
+  app.post(prefix, requireUser, async (req, res) => {
     try {
-      send(res, await api.add(await getDb(), req.body));
+      const w = await writeMeta(req, req.body);
+      if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+      send(res, await api.add(await getDb(), req.body, w.meta));
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
   });
-  app.put(`${prefix}/:id`, requireUser, requireAdmin, async (req, res) => {
+  app.put(`${prefix}/:id`, requireUser, async (req, res) => {
     try {
-      send(res, await api.update(await getDb(), req.params.id, req.body));
+      const w = await writeMeta(req, req.body);
+      if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+      send(res, await api.update(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row)));
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
   });
-  app.delete(`${prefix}/:id`, requireUser, requireAdmin, async (req, res) => {
+  app.delete(`${prefix}/:id`, requireUser, async (req, res) => {
     try {
-      send(res, await api.remove(await getDb(), req.params.id));
+      const w = await writeMeta(req, { locationId: req.query.locationId });
+      if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+      send(res, await api.remove(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row)));
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
@@ -137,7 +250,7 @@ async function start() {
   try {
     const db = await getDb();
     await seedUsers(db);
-    console.log('Users ready: admin + employee');
+    console.log('Users ready: admin + location employees');
   } catch (e) {
     console.warn('User seed skip:', String(e.message || e));
   }

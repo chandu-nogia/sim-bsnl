@@ -16,12 +16,14 @@ class AuthStore extends ChangeNotifier {
   String? email;
   String role = '';
   String name = '';
+  int? locationId;
+  String locationName = '';
   String? apiUrl;
   bool loading = true;
 
   bool get isLoggedIn => (token ?? '').isNotEmpty;
   bool get isAdmin => role == 'admin';
-  bool get canWrite => isAdmin;
+  bool get canWrite => isLoggedIn;
 
   String get apiBase {
     final saved = (apiUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
@@ -43,12 +45,18 @@ class AuthStore extends ChangeNotifier {
     email = prefs.getString('authEmail');
     role = prefs.getString('authRole') ?? '';
     name = prefs.getString('authName') ?? '';
+    locationId = int.tryParse(prefs.getString('authLocationId') ?? '');
+    locationName = prefs.getString('authLocationName') ?? '';
     if (isLoggedIn) {
       try {
         final user = await _api.me(apiBase);
         email = '${user['email'] ?? email}';
         role = '${user['role'] ?? role}';
         name = '${user['name'] ?? name}';
+        locationId = _asInt(user['locationId']) ?? locationId;
+        locationName = '${user['locationName'] ?? locationName}';
+        final newToken = '${user['token'] ?? ''}';
+        if (newToken.isNotEmpty) token = newToken;
         await _persist();
       } catch (_) {
         await logout();
@@ -65,6 +73,8 @@ class AuthStore extends ChangeNotifier {
     email = out.email;
     role = out.role;
     name = out.name;
+    locationId = out.locationId;
+    locationName = out.locationName;
     await _persist();
     notifyListeners();
   }
@@ -74,11 +84,15 @@ class AuthStore extends ChangeNotifier {
     email = null;
     role = '';
     name = '';
+    locationId = null;
+    locationName = '';
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('authToken');
     await prefs.remove('authEmail');
     await prefs.remove('authRole');
     await prefs.remove('authName');
+    await prefs.remove('authLocationId');
+    await prefs.remove('authLocationName');
     notifyListeners();
   }
 
@@ -100,5 +114,13 @@ class AuthStore extends ChangeNotifier {
     await prefs.setString('authEmail', email ?? '');
     await prefs.setString('authRole', role);
     await prefs.setString('authName', name);
+    await prefs.setString('authLocationId', '${locationId ?? ''}');
+    await prefs.setString('authLocationName', locationName);
+  }
+
+  int? _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('$v');
   }
 }

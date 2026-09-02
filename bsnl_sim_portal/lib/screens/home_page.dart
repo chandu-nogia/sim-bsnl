@@ -11,8 +11,9 @@ import '../widgets/filters.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.store});
+  const HomePage({super.key, required this.store, this.locationName});
   final SimStore store;
+  final String? locationName;
 
   @override
   Widget build(BuildContext context) {
@@ -21,13 +22,15 @@ class HomePage extends StatelessWidget {
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Column(
+            title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('BSNL SIM Portal'),
+                const Text('BSNL SIM Portal'),
                 Text(
-                  'Register  •  CYMN / MNP / Swap / Postpaid',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Colors.white70),
+                  locationName == null || locationName!.isEmpty
+                      ? 'Register  •  CYMN / MNP / Swap / Postpaid'
+                      : '$locationName  •  CYMN / MNP / Swap / Postpaid',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Colors.white70),
                 ),
               ],
             ),

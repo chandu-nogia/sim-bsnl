@@ -25,6 +25,11 @@ class SimStore extends ChangeNotifier {
   String? statusMessage;
   bool get canWrite => auth.canWrite;
   String get apiBase => auth.apiBase;
+  int? locationId;
+
+  void setLocation(int? id) {
+    locationId = id;
+  }
 
   List<SimEntry> get filtered {
     final q = search.trim().toLowerCase();
@@ -62,7 +67,7 @@ class SimStore extends ChangeNotifier {
     useApi = prefs.getBool('useApi') ?? true;
     try {
       if (useApi) {
-        entries = await _api.list(apiBase);
+        entries = await _api.list(apiBase, locationId: locationId ?? auth.locationId);
         connected = true;
         final host = apiBase.isEmpty ? 'is site' : apiBase;
         statusMessage = 'Server ($host) se ${entries.length} entries';
@@ -162,12 +167,12 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> addEntry(SimEntry entry) async {
-    if (!canWrite) throw ApiException('Sirf admin add kar sakta hai');
+    if (!canWrite) throw ApiException('Add karne ki permission nahi');
     error = null;
     notifyListeners();
     try {
       if (useApi) {
-        await _api.add(apiBase, entry);
+        await _api.add(apiBase, entry, locationId: locationId ?? auth.locationId);
         await load();
       } else {
         entries = [...entries, entry];
@@ -183,12 +188,12 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> updateEntry(SimEntry original, SimEntry updated) async {
-    if (!canWrite) throw ApiException('Sirf admin update kar sakta hai');
+    if (!canWrite) throw ApiException('Update karne ki permission nahi');
     error = null;
     notifyListeners();
     try {
       if (useApi) {
-        await _api.update(apiBase, updated.copyWith(rowIndex: original.rowIndex));
+        await _api.update(apiBase, updated.copyWith(rowIndex: original.rowIndex), locationId: locationId ?? auth.locationId);
         await load();
       } else {
         final i = _indexOf(original);
@@ -206,12 +211,12 @@ class SimStore extends ChangeNotifier {
   }
 
   Future<void> deleteEntry(SimEntry entry) async {
-    if (!canWrite) throw ApiException('Sirf admin delete kar sakta hai');
+    if (!canWrite) throw ApiException('Delete karne ki permission nahi');
     error = null;
     notifyListeners();
     try {
       if (useApi) {
-        await _api.delete(apiBase, entry);
+        await _api.delete(apiBase, entry, locationId: locationId ?? auth.locationId);
         await load();
       } else {
         final i = _indexOf(entry);
