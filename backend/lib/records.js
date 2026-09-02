@@ -2,6 +2,7 @@
 
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
+const { mongoListQuery } = require('./rbac');
 
 function publicCbc(row) {
   const id = Number(row.id);
@@ -16,6 +17,10 @@ function publicCbc(row) {
     landline: row.landline || '',
     amount: row.amount || '',
     transactionId: row.transactionId || '',
+    createdBy: row.createdBy || '',
+    employeeId: row.employeeId ? Number(row.employeeId) : null,
+    createdAt: row.createdAt || '',
+    updatedAt: row.updatedAt || '',
   };
 }
 
@@ -53,6 +58,11 @@ function publicCtopup(row) {
     number: row.number || '',
     amount: row.amount || '',
     status: row.status || 'Pending',
+    transactionId: row.transactionId || '',
+    createdBy: row.createdBy || '',
+    employeeId: row.employeeId ? Number(row.employeeId) : null,
+    createdAt: row.createdAt || '',
+    updatedAt: row.updatedAt || '',
   };
 }
 
@@ -64,6 +74,7 @@ function pickCtopup(body) {
     number: String(b.number ?? b.mobile ?? '').trim(),
     amount: String(b.amount ?? '').trim(),
     status: String(b.status ?? b.paymentStatus ?? 'Pending').trim() || 'Pending',
+    transactionId: String(b.transactionId ?? b.txnId ?? b.reference ?? '').trim(),
   };
 }
 
@@ -75,35 +86,63 @@ function validateCtopup(row) {
   return null;
 }
 
+function actorLabel(meta) {
+  return meta.name || meta.email || 'Staff';
+}
+
 function makeCrud(collection, pick, validate, toPublic, section) {
   return {
     async list(db, scope = {}) {
-      const q = {};
-      if (scope.locationId) q.locationId = Number(scope.locationId);
-      const rows = await db.collection(collection).find(q).sort({ id: 1 }).toArray();
-      return rows.map(toPublic);
+      const q = mongoListQuery(scope);
+      const search = String(scope.q || '').trim();
+      if (search) {
+        const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+        q.$or = [{ name: rx }, { mobile: rx }, { number: rx }, { transactionId: rx }];
+      }
+      const from = String(scope.from || '').slice(0, 10);
+      const to = String(scope.to || '').slice(0, 10);
+      if (from || to) {
+        q.date = {};
+        if (from) q.date.$gte = from;
+        if (to) q.date.$lte = to;
+      }
+      const employee = String(scope.employee || '').trim().toLowerCase();
+      if (employee) q.createdBy = employee;
+      const page = Math.max(1, Number(scope.page) || 1);
+      const limit = Math.min(500, Math.max(20, Number(scope.limit) || 200));
+      const skip = (page - 1) * limit;
+      const col = db.collection(collection);
+      const total = await col.countDocuments(q);
+      const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+      return { rows: rows.map(toPublic), total, page, limit };
     },
     async add(db, body, meta) {
       const row = pick(body);
       const err = validate(row);
       if (err) return { status: 400, json: { ok: false, error: err } };
       const id = await nextId(db, collection);
+      const now = new Date().toISOString();
       const saved = {
         id,
         ...row,
         locationId: Number(meta.locationId),
         locationName: meta.locationName || '',
-        createdAt: new Date().toISOString(),
+        createdBy: meta.email || '',
+        employeeId: meta.userId ? Number(meta.userId) : null,
+        createdAt: now,
+        updatedAt: now,
       };
       await db.collection(collection).insertOne(saved);
+      const moneyBit = row.amount ? ` of ₹${row.amount}` : '';
       await logActivity(db, {
         email: meta.email,
         role: meta.role,
+        name: meta.name,
         action: 'add',
         section,
         locationId: saved.locationId,
         locationName: saved.locationName,
-        detail: `${row.name} add`,
+        detail: `${actorLabel(meta)} added ${section === 'ctopup' ? 'C-TopUp transaction' : 'CBC record'}${moneyBit} in ${saved.locationName}`,
       });
       return { status: 200, json: { ok: true, row: toPublic(saved) } };
     },
@@ -122,17 +161,21 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         id,
         locationId: existing.locationId,
         locationName: existing.locationName || meta.locationName || '',
+        createdBy: existing.createdBy || meta.email || '',
+        employeeId: existing.employeeId || (meta.userId ? Number(meta.userId) : null),
         createdAt: existing.createdAt || '',
+        updatedAt: new Date().toISOString(),
       };
       await db.collection(collection).updateOne({ id }, { $set: saved });
       await logActivity(db, {
         email: meta.email,
         role: meta.role,
+        name: meta.name,
         action: 'update',
         section,
         locationId: saved.locationId,
         locationName: saved.locationName,
-        detail: `${row.name} update`,
+        detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBC'} record in ${saved.locationName}`,
       });
       return { status: 200, json: { ok: true, row: toPublic(saved) } };
     },
@@ -147,11 +190,12 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       await logActivity(db, {
         email: meta.email,
         role: meta.role,
+        name: meta.name,
         action: 'delete',
         section,
         locationId: existing.locationId,
         locationName: existing.locationName || '',
-        detail: `${existing.name || id} delete`,
+        detail: `${actorLabel(meta)} deleted ${section === 'ctopup' ? 'C-TopUp' : 'CBC'} record in ${existing.locationName || ''}`,
       });
       return { status: 200, json: { ok: true } };
     },

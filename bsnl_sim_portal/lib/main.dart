@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
-import 'screens/dashboard_page.dart';
 import 'screens/login_page.dart';
 import 'state/auth_store.dart';
 import 'state/sim_store.dart';
+import 'widgets/app_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,7 +46,7 @@ class _BsnlSimAppState extends State<BsnlSimApp> {
           } else if (!auth.isLoggedIn) {
             page = LoginPage(auth: auth);
           } else {
-            page = DashboardPage(auth: auth, simStore: store);
+            page = AppShell(auth: auth, simStore: store);
           }
           return AnimatedSwitcher(
             duration: const Duration(milliseconds: 380),

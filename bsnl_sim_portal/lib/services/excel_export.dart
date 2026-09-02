@@ -86,3 +86,53 @@ Uint8List buildSimExcel(List<SimEntry> rows) {
   }
   return Uint8List.fromList(encoded);
 }
+
+Future<void> downloadMapExcel(
+  BuildContext context,
+  String title,
+  List<Map<String, dynamic>> rows,
+) async {
+  if (rows.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Download ke liye koi row nahi')),
+    );
+    return;
+  }
+  try {
+    final excel = Excel.createExcel();
+    final sheetName = title.replaceAll(RegExp(r'[^A-Za-z0-9 ]'), '').trim();
+    final name = sheetName.isEmpty ? 'Report' : sheetName.substring(0, sheetName.length > 28 ? 28 : sheetName.length);
+    final sheet = excel[name];
+    final defaultSheet = excel.getDefaultSheet();
+    if (defaultSheet != null && defaultSheet != name) {
+      excel.delete(defaultSheet);
+    }
+    final headers = rows.first.keys.map((k) => '$k').toList();
+    sheet.appendRow([for (final h in headers) TextCellValue(h)]);
+    for (final row in rows) {
+      sheet.appendRow([
+        for (final h in headers) TextCellValue('${row[h] ?? ''}'),
+      ]);
+    }
+    final encoded = excel.encode();
+    if (encoded == null) throw StateError('Excel encode failed');
+    final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+    final filename = '${name.replaceAll(' ', '_')}_$stamp.xlsx';
+    triggerDownload(
+      Uint8List.fromList(encoded),
+      filename,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$filename download ho gaya (${rows.length} rows)')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Excel download fail: $e'), backgroundColor: Colors.red.shade800),
+      );
+    }
+  }
+}

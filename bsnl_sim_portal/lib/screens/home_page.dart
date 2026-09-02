@@ -11,9 +11,10 @@ import '../widgets/filters.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.store, this.locationName});
+  const HomePage({super.key, required this.store, this.locationName, this.nested = false});
   final SimStore store;
   final String? locationName;
+  final bool nested;
 
   @override
   Widget build(BuildContext context) {
@@ -22,10 +23,11 @@ class HomePage extends StatelessWidget {
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
+            automaticallyImplyLeading: !nested,
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('BSNL SIM Portal'),
+                Text(nested ? 'Users / SIM Register' : 'BSNL SIM Portal'),
                 Text(
                   locationName == null || locationName!.isEmpty
                       ? 'Register  •  CYMN / MNP / Swap / Postpaid'
@@ -89,7 +91,7 @@ class HomePage extends StatelessWidget {
                       )
                     : const Icon(Icons.refresh),
               ),
-              if (store.canWrite)
+              if (store.canWrite && !nested)
                 IconButton(
                   tooltip: 'Server setup',
                   onPressed: () {

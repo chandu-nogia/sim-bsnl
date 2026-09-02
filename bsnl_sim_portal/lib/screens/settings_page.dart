@@ -4,8 +4,9 @@ import '../app_theme.dart';
 import '../state/sim_store.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.store});
+  const SettingsPage({super.key, required this.store, this.nested = false});
   final SimStore store;
+  final bool nested;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -63,7 +64,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Vercel + Render + Atlas')),
+      appBar: AppBar(
+        automaticallyImplyLeading: !widget.nested,
+        title: const Text('Settings'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [

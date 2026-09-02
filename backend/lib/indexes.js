@@ -1,0 +1,32 @@
+'use strict';
+
+async function ensureIndexes(db) {
+  const jobs = [
+    db.collection('users').createIndex({ email: 1 }, { unique: true }),
+    db.collection('users').createIndex({ role: 1, status: 1 }),
+    db.collection('users').createIndex({ assignedLocations: 1 }),
+    db.collection('locations').createIndex({ id: 1 }, { unique: true }),
+    db.collection('locations').createIndex({ code: 1 }),
+    db.collection('locations').createIndex({ status: 1 }),
+  ];
+  for (const col of ['sims', 'cbc', 'ctopup']) {
+    jobs.push(db.collection(col).createIndex({ locationId: 1 }));
+    jobs.push(db.collection(col).createIndex({ createdAt: 1 }));
+    jobs.push(db.collection(col).createIndex({ employeeId: 1 }));
+    jobs.push(db.collection(col).createIndex({ createdBy: 1 }));
+  }
+  jobs.push(db.collection('cbc').createIndex({ transactionId: 1 }));
+  jobs.push(db.collection('ctopup').createIndex({ transactionId: 1 }));
+  jobs.push(db.collection('activity').createIndex({ at: -1 }));
+  jobs.push(db.collection('activity').createIndex({ locationId: 1, at: -1 }));
+  jobs.push(db.collection('activity').createIndex({ email: 1, at: -1 }));
+  jobs.push(db.collection('activity').createIndex({ action: 1, at: -1 }));
+  const results = await Promise.allSettled(jobs);
+  for (const r of results) {
+    if (r.status === 'rejected') {
+      console.warn('Index skip:', r.reason?.message || r.reason);
+    }
+  }
+}
+
+module.exports = { ensureIndexes };

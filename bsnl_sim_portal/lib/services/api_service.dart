@@ -19,6 +19,7 @@ class LoginResult {
     required this.name,
     this.locationId,
     this.locationName = '',
+    this.assignedLocations = const [],
   });
   final String token;
   final String email;
@@ -26,11 +27,13 @@ class LoginResult {
   final String name;
   final int? locationId;
   final String locationName;
+  final List<int> assignedLocations;
 }
 
 class ApiService {
-  static const _timeout = Duration(seconds: 12);
+  static const _timeout = Duration(seconds: 20);
   String? Function()? tokenGetter;
+  int? Function()? locationIdGetter;
 
   Uri _uri(String base, String path) {
     final b = base.trim().replaceAll(RegExp(r'/+$'), '');
@@ -40,11 +43,13 @@ class ApiService {
     return Uri.parse('$b$path');
   }
 
-  Map<String, String> _headers() {
+  Map<String, String> _headers({int? locationId}) {
     final token = tokenGetter?.call();
+    final loc = locationId ?? locationIdGetter?.call();
     return {
       'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (loc != null) 'X-Location-Id': '$loc',
     };
   }
 
@@ -78,6 +83,28 @@ class ApiService {
     }
   }
 
+  int? _int(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('$v');
+  }
+
+  List<int> _ints(dynamic v) {
+    if (v is! List) return [];
+    return [for (final x in v) if (_int(x) != null) _int(x)!];
+  }
+
+  String _withQuery(String path, Map<String, String?> q) {
+    final parts = <String>[];
+    q.forEach((k, v) {
+      if (v != null && v.trim().isNotEmpty) {
+        parts.add('${Uri.encodeQueryComponent(k)}=${Uri.encodeQueryComponent(v.trim())}');
+      }
+    });
+    if (parts.isEmpty) return path;
+    return '$path${path.contains('?') ? '&' : '?'}${parts.join('&')}';
+  }
+
   Future<LoginResult> login(String base, String email, String password) async {
     final json = await _send(
       http.post(
@@ -97,18 +124,8 @@ class ApiService {
       name: '${user['name'] ?? ''}',
       locationId: _int(user['locationId']),
       locationName: '${user['locationName'] ?? ''}',
+      assignedLocations: _ints(user['assignedLocations']),
     );
-  }
-
-  int? _int(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse('$v');
-  }
-
-  String _withLocation(String path, int? locationId) {
-    if (locationId == null) return path;
-    return '$path${path.contains('?') ? '&' : '?'}locationId=$locationId';
   }
 
   Future<Map<String, dynamic>> me(String base) async {
@@ -129,22 +146,46 @@ class ApiService {
     return '${json['message'] ?? 'Connected'}';
   }
 
-  Future<List<Map<String, dynamic>>> listRows(String base, String path, {int? locationId}) async {
-    final json = await _send(http.get(_uri(base, _withLocation(path, locationId)), headers: _headers()));
+  Future<List<Map<String, dynamic>>> listRows(
+    String base,
+    String path, {
+    int? locationId,
+    String? q,
+    String? from,
+    String? to,
+    String? employee,
+    int? page,
+    int? limit,
+  }) async {
+    final json = await _send(
+      http.get(
+        _uri(
+          base,
+          _withQuery(path, {
+            'locationId': locationId?.toString(),
+            'q': q,
+            'from': from,
+            'to': to,
+            'employee': employee,
+            'page': page?.toString(),
+            'limit': limit?.toString(),
+          }),
+        ),
+        headers: _headers(locationId: locationId),
+      ),
+    );
     if (json['ok'] != true) {
       throw ApiException('${json['error'] ?? 'List failed'}');
     }
     final rows = (json['rows'] as List?) ?? [];
-    return [
-      for (final r in rows) Map<String, dynamic>.from(r as Map),
-    ];
+    return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
   }
 
   Future<void> addRow(String base, String path, Map<String, dynamic> body, {int? locationId}) async {
     final json = await _send(
       http.post(
         _uri(base, path),
-        headers: _headers(),
+        headers: _headers(locationId: locationId),
         body: jsonEncode({
           ...body,
           'locationId': ?locationId,
@@ -158,7 +199,7 @@ class ApiService {
     final json = await _send(
       http.put(
         _uri(base, '$path/$id'),
-        headers: _headers(),
+        headers: _headers(locationId: locationId),
         body: jsonEncode({
           ...body,
           'locationId': ?locationId,
@@ -170,13 +211,16 @@ class ApiService {
 
   Future<void> deleteRow(String base, String path, int id, {int? locationId}) async {
     final json = await _send(
-      http.delete(_uri(base, _withLocation('$path/$id', locationId)), headers: _headers()),
+      http.delete(
+        _uri(base, _withQuery('$path/$id', {'locationId': locationId?.toString()})),
+        headers: _headers(locationId: locationId),
+      ),
     );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Delete failed'}');
   }
 
   Future<List<SimEntry>> list(String base, {int? locationId}) async {
-    final rows = await listRows(base, '/api/sims', locationId: locationId);
+    final rows = await listRows(base, '/api/sims', locationId: locationId, limit: 500);
     return [for (final r in rows) SimEntry.fromSheet(r)];
   }
 
@@ -202,12 +246,27 @@ class ApiService {
   Future<List<Map<String, dynamic>>> listLocations(String base) =>
       listRows(base, '/api/locations');
 
-  Future<void> addLocation(String base, {required String name, required String email, required String password}) async {
+  Future<void> addLocation(
+    String base, {
+    required String name,
+    String code = '',
+    String address = '',
+    String status = 'active',
+    String email = '',
+    String password = '',
+  }) async {
     final json = await _send(
       http.post(
         _uri(base, '/api/locations'),
         headers: _headers(),
-        body: jsonEncode({'name': name, 'email': email, 'password': password}),
+        body: jsonEncode({
+          'name': name,
+          'code': code,
+          'address': address,
+          'status': status,
+          if (email.isNotEmpty) 'email': email,
+          if (password.isNotEmpty) 'password': password,
+        }),
       ),
     );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Jagah add fail'}');
@@ -217,7 +276,10 @@ class ApiService {
     String base,
     int id, {
     required String name,
-    required String email,
+    String code = '',
+    String address = '',
+    String status = 'active',
+    String email = '',
     String password = '',
   }) async {
     final json = await _send(
@@ -226,7 +288,10 @@ class ApiService {
         headers: _headers(),
         body: jsonEncode({
           'name': name,
-          'email': email,
+          'code': code,
+          'address': address,
+          'status': status,
+          if (email.isNotEmpty) 'email': email,
           if (password.isNotEmpty) 'password': password,
         }),
       ),
@@ -239,11 +304,132 @@ class ApiService {
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Jagah delete fail'}');
   }
 
+  Future<List<Map<String, dynamic>>> listEmployees(String base) =>
+      listRows(base, '/api/employees');
+
+  Future<void> saveEmployee(
+    String base, {
+    String? id,
+    required String name,
+    required String email,
+    String password = '',
+    required List<int> assignedLocations,
+    String status = 'active',
+  }) async {
+    final body = {
+      'name': name,
+      'email': email,
+      'assignedLocations': assignedLocations,
+      'status': status,
+      if (password.isNotEmpty) 'password': password,
+    };
+    final json = id == null || id.isEmpty
+        ? await _send(http.post(_uri(base, '/api/employees'), headers: _headers(), body: jsonEncode(body)))
+        : await _send(
+            http.put(
+              _uri(base, '/api/employees/${Uri.encodeComponent(id)}'),
+              headers: _headers(),
+              body: jsonEncode(body),
+            ),
+          );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Employee save fail'}');
+  }
+
+  Future<void> resetEmployeePassword(String base, String id, String password) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/employees/${Uri.encodeComponent(id)}/reset-password'),
+        headers: _headers(),
+        body: jsonEncode({'password': password}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Password reset fail'}');
+  }
+
+  Future<void> deleteEmployee(String base, String id) async {
+    final json = await _send(
+      http.delete(_uri(base, '/api/employees/${Uri.encodeComponent(id)}'), headers: _headers()),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Employee delete fail'}');
+  }
+
   Future<Map<String, dynamic>> summary(String base) async {
     final json = await _send(http.get(_uri(base, '/api/summary'), headers: _headers()));
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Summary fail'}');
     return json;
   }
 
-  Future<List<Map<String, dynamic>>> activity(String base) => listRows(base, '/api/activity');
+  Future<Map<String, dynamic>> locationSummary(String base, int id) async {
+    final json = await _send(http.get(_uri(base, '/api/summary/location/$id'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Summary fail'}');
+    return json['location'] is Map
+        ? Map<String, dynamic>.from(json['location'] as Map)
+        : json;
+  }
+
+  Future<Map<String, dynamic>> reports(
+    String base, {
+    required String type,
+    String? from,
+    String? to,
+    int? locationId,
+    String? employee,
+  }) async {
+    final json = await _send(
+      http.get(
+        _uri(
+          base,
+          _withQuery('/api/reports', {
+            'type': type,
+            'from': from,
+            'to': to,
+            'locationId': locationId?.toString(),
+            'employee': employee,
+          }),
+        ),
+        headers: _headers(),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Report fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> activityPage(
+    String base, {
+    int? locationId,
+    String? employee,
+    String? action,
+    String? q,
+    String? from,
+    String? to,
+    int page = 1,
+    int limit = 40,
+  }) async {
+    final json = await _send(
+      http.get(
+        _uri(
+          base,
+          _withQuery('/api/activity', {
+            'locationId': locationId?.toString(),
+            'employee': employee,
+            'action': action,
+            'q': q,
+            'from': from,
+            'to': to,
+            'page': '$page',
+            'limit': '$limit',
+          }),
+        ),
+        headers: _headers(),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Activity fail'}');
+    return json;
+  }
+
+  Future<List<Map<String, dynamic>>> activity(String base) async {
+    final json = await activityPage(base, limit: 40);
+    final rows = (json['rows'] as List?) ?? [];
+    return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+  }
 }

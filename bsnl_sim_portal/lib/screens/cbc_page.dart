@@ -4,10 +4,11 @@ import '../state/auth_store.dart';
 import 'records_page.dart';
 
 class CbcPage extends StatelessWidget {
-  const CbcPage({super.key, required this.auth, this.locationId, this.locationName});
+  const CbcPage({super.key, required this.auth, this.locationId, this.locationName, this.nested = false});
   final AuthStore auth;
   final int? locationId;
   final String? locationName;
+  final bool nested;
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +18,7 @@ class CbcPage extends StatelessWidget {
       path: '/api/cbc',
       locationId: locationId,
       locationName: locationName,
+      nested: nested,
       fields: const [
         RecordField('date', 'Date', kind: RecordFieldKind.date),
         RecordField('name', 'Name'),

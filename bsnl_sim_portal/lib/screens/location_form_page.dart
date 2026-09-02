@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../state/auth_store.dart';
+import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
 class LocationFormPage extends StatefulWidget {
@@ -15,8 +16,9 @@ class LocationFormPage extends StatefulWidget {
 
 class _LocationFormPageState extends State<LocationFormPage> {
   late final TextEditingController _name;
-  late final TextEditingController _email;
-  late final TextEditingController _password;
+  late final TextEditingController _code;
+  late final TextEditingController _address;
+  String _status = 'active';
   bool _busy = false;
   String? _error;
 
@@ -26,23 +28,17 @@ class _LocationFormPageState extends State<LocationFormPage> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: '${widget.existing?['name'] ?? ''}');
-    _email = TextEditingController(text: '${widget.existing?['email'] ?? ''}');
-    _password = TextEditingController();
+    _code = TextEditingController(text: '${widget.existing?['code'] ?? ''}');
+    _address = TextEditingController(text: '${widget.existing?['address'] ?? ''}');
+    _status = '${widget.existing?['status'] ?? 'active'}';
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _email.dispose();
-    _password.dispose();
+    _code.dispose();
+    _address.dispose();
     super.dispose();
-  }
-
-  int? _idOf() {
-    final v = widget.existing?['id'];
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse('$v');
   }
 
   Future<void> _save() async {
@@ -52,24 +48,31 @@ class _LocationFormPageState extends State<LocationFormPage> {
     });
     try {
       if (_editing) {
-        final id = _idOf();
+        final id = asInt(widget.existing?['id']);
         if (id == null) throw Exception('Jagah id nahi mili');
         await widget.auth.api.updateLocation(
           widget.auth.apiBase,
           id,
           name: _name.text.trim(),
-          email: _email.text.trim(),
-          password: _password.text.trim(),
+          code: _code.text.trim(),
+          address: _address.text.trim(),
+          status: _status,
         );
       } else {
         await widget.auth.api.addLocation(
           widget.auth.apiBase,
           name: _name.text.trim(),
-          email: _email.text.trim(),
-          password: _password.text,
+          code: _code.text.trim(),
+          address: _address.text.trim(),
+          status: _status,
         );
       }
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_editing ? 'Location updated' : 'Location added — Portal, CBC, C-TopUp ready')),
+        );
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -77,73 +80,44 @@ class _LocationFormPageState extends State<LocationFormPage> {
     }
   }
 
-  Future<void> _delete() async {
-    final id = _idOf();
-    if (id == null) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Jagah delete?'),
-        content: const Text('Login band ho jayega. Data rehta hai.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      await widget.auth.api.deleteLocation(widget.auth.apiBase, id);
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      setState(() => _error = '$e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_editing ? 'Jagah update' : 'Nayi jagah add'),
-        actions: [
-          if (_editing)
-            IconButton(
-              tooltip: 'Delete',
-              onPressed: _busy ? null : _delete,
-              icon: const Icon(Icons.delete_outline),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: Text(_editing ? 'Edit location' : 'Add location')),
       body: FadeIn(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
           children: [
             const Text(
-              'Har jagah ka apna email/password hoga. Us login pe SIM, CBC aur CTopup milenge.',
+              'Nayi jagah add hote hi uske liye BSNL Portal, CBC List aur C-TopUp available ho jate hain. Employees alag se assign karo.',
               style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Jagah ka naam *', hintText: 'Khatu'),
+              decoration: const InputDecoration(labelText: 'Location name *', hintText: 'Khatu Shyam Ji'),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'ID / Email *'),
+              controller: _code,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(labelText: 'Location code', hintText: 'KHATU'),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _password,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: _editing ? 'Naya password (optional)' : 'Password *',
-              ),
+              controller: _address,
+              decoration: const InputDecoration(labelText: 'Address'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              // ignore: deprecated_member_use
+              value: _status,
+              decoration: const InputDecoration(labelText: 'Status'),
+              items: const [
+                DropdownMenuItem(value: 'active', child: Text('Active')),
+                DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+              ],
+              onChanged: (v) => setState(() => _status = v ?? 'active'),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

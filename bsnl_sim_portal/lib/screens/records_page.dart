@@ -33,6 +33,7 @@ class RecordsPage extends StatefulWidget {
     required this.fields,
     this.locationId,
     this.locationName,
+    this.nested = false,
   });
 
   final AuthStore auth;
@@ -41,6 +42,7 @@ class RecordsPage extends StatefulWidget {
   final List<RecordField> fields;
   final int? locationId;
   final String? locationName;
+  final bool nested;
 
   @override
   State<RecordsPage> createState() => _RecordsPageState();
@@ -162,6 +164,7 @@ class _RecordsPageState extends State<RecordsPage> {
     final canWrite = widget.auth.canWrite;
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.nested,
         title: Text(
           widget.locationName == null || widget.locationName!.isEmpty
               ? widget.title

@@ -67,7 +67,7 @@ class SimStore extends ChangeNotifier {
     useApi = prefs.getBool('useApi') ?? true;
     try {
       if (useApi) {
-        entries = await _api.list(apiBase, locationId: locationId ?? auth.locationId);
+        entries = await _api.list(apiBase, locationId: locationId ?? auth.effectiveLocationId);
         connected = true;
         final host = apiBase.isEmpty ? 'is site' : apiBase;
         statusMessage = 'Server ($host) se ${entries.length} entries';
@@ -172,7 +172,7 @@ class SimStore extends ChangeNotifier {
     notifyListeners();
     try {
       if (useApi) {
-        await _api.add(apiBase, entry, locationId: locationId ?? auth.locationId);
+        await _api.add(apiBase, entry, locationId: locationId ?? auth.effectiveLocationId);
         await load();
       } else {
         entries = [...entries, entry];
@@ -193,7 +193,7 @@ class SimStore extends ChangeNotifier {
     notifyListeners();
     try {
       if (useApi) {
-        await _api.update(apiBase, updated.copyWith(rowIndex: original.rowIndex), locationId: locationId ?? auth.locationId);
+        await _api.update(apiBase, updated.copyWith(rowIndex: original.rowIndex), locationId: locationId ?? auth.effectiveLocationId);
         await load();
       } else {
         final i = _indexOf(original);
@@ -216,7 +216,7 @@ class SimStore extends ChangeNotifier {
     notifyListeners();
     try {
       if (useApi) {
-        await _api.delete(apiBase, entry, locationId: locationId ?? auth.locationId);
+        await _api.delete(apiBase, entry, locationId: locationId ?? auth.effectiveLocationId);
         await load();
       } else {
         final i = _indexOf(entry);

@@ -2,6 +2,7 @@
 
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
+const { mongoListQuery } = require('./rbac');
 
 function publicRow(row) {
   const id = Number(row.id);
@@ -20,6 +21,10 @@ function publicRow(row) {
     sim: row.sim || '',
     last6: row.last6 || '',
     status: row.status || 'Issued',
+    createdBy: row.createdBy || '',
+    employeeId: row.employeeId ? Number(row.employeeId) : null,
+    createdAt: row.createdAt || '',
+    updatedAt: row.updatedAt || '',
   };
 }
 
@@ -54,10 +59,26 @@ function validate(row) {
 }
 
 async function listSims(db, scope = {}) {
-  const q = {};
-  if (scope.locationId) q.locationId = Number(scope.locationId);
-  const rows = await db.collection('sims').find(q).sort({ id: 1 }).toArray();
-  return rows.map(publicRow);
+  const q = mongoListQuery(scope);
+  const search = String(scope.q || '').trim();
+  if (search) {
+    const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    q.$or = [{ name: rx }, { mobile: rx }, { sim: rx }, { last6: rx }];
+  }
+  const from = String(scope.from || '').slice(0, 10);
+  const to = String(scope.to || '').slice(0, 10);
+  if (from || to) {
+    q.date = {};
+    if (from) q.date.$gte = from;
+    if (to) q.date.$lte = to;
+  }
+  const page = Math.max(1, Number(scope.page) || 1);
+  const limit = Math.min(500, Math.max(20, Number(scope.limit) || 300));
+  const skip = (page - 1) * limit;
+  const col = db.collection('sims');
+  const total = await col.countDocuments(q);
+  const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+  return { rows: rows.map(publicRow), total, page, limit };
 }
 
 async function addSim(db, body, meta) {
@@ -70,22 +91,27 @@ async function addSim(db, body, meta) {
     row.sno = (last && Number(last.sno) ? Number(last.sno) : 0) + 1;
   }
   const id = await nextId(db, 'sims');
+  const now = new Date().toISOString();
   const saved = {
     id,
     ...row,
     locationId: Number(meta.locationId),
     locationName: meta.locationName || '',
-    createdAt: new Date().toISOString(),
+    createdBy: meta.email || '',
+    employeeId: meta.userId ? Number(meta.userId) : null,
+    createdAt: now,
+    updatedAt: now,
   };
   await db.collection('sims').insertOne(saved);
   await logActivity(db, {
     email: meta.email,
     role: meta.role,
+    name: meta.name,
     action: 'add',
     section: 'sim',
     locationId: saved.locationId,
     locationName: saved.locationName,
-    detail: `${row.name} SIM add`,
+    detail: `${meta.name || meta.email} added new user ${row.name} in ${saved.locationName}`,
   });
   return { status: 200, json: { ok: true, row: publicRow(saved) } };
 }
@@ -105,17 +131,21 @@ async function updateSim(db, idRaw, body, meta, assertRow) {
     id,
     locationId: existing.locationId,
     locationName: existing.locationName || meta.locationName || '',
+    createdBy: existing.createdBy || meta.email || '',
+    employeeId: existing.employeeId || (meta.userId ? Number(meta.userId) : null),
     createdAt: existing.createdAt || '',
+    updatedAt: new Date().toISOString(),
   };
   await db.collection('sims').updateOne({ id }, { $set: saved });
   await logActivity(db, {
     email: meta.email,
     role: meta.role,
+    name: meta.name,
     action: 'update',
     section: 'sim',
     locationId: saved.locationId,
     locationName: saved.locationName,
-    detail: `${row.name} SIM update`,
+    detail: `${meta.name || meta.email} updated user ${row.name} in ${saved.locationName}`,
   });
   return { status: 200, json: { ok: true, row: publicRow(saved) } };
 }
@@ -131,11 +161,12 @@ async function deleteSim(db, idRaw, meta, assertRow) {
   await logActivity(db, {
     email: meta.email,
     role: meta.role,
+    name: meta.name,
     action: 'delete',
     section: 'sim',
     locationId: existing.locationId,
     locationName: existing.locationName || '',
-    detail: `${existing.name || id} SIM delete`,
+    detail: `${meta.name || meta.email} deleted user ${existing.name || id} in ${existing.locationName || ''}`,
   });
   return { status: 200, json: { ok: true } };
 }

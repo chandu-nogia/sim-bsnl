@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 class AuthStore extends ChangeNotifier {
   AuthStore() {
     _api.tokenGetter = () => token;
+    _api.locationIdGetter = () => effectiveLocationId;
     loadSaved();
   }
 
@@ -18,12 +19,15 @@ class AuthStore extends ChangeNotifier {
   String name = '';
   int? locationId;
   String locationName = '';
+  List<int> assignedLocations = [];
+  int? selectedLocationId;
   String? apiUrl;
   bool loading = true;
 
   bool get isLoggedIn => (token ?? '').isNotEmpty;
   bool get isAdmin => role == 'admin';
   bool get canWrite => isLoggedIn;
+  int? get effectiveLocationId => selectedLocationId ?? locationId;
 
   String get apiBase {
     final saved = (apiUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
@@ -47,16 +51,12 @@ class AuthStore extends ChangeNotifier {
     name = prefs.getString('authName') ?? '';
     locationId = int.tryParse(prefs.getString('authLocationId') ?? '');
     locationName = prefs.getString('authLocationName') ?? '';
+    selectedLocationId = int.tryParse(prefs.getString('authSelectedLocationId') ?? '');
+    assignedLocations = _ints(prefs.getString('authAssignedLocations') ?? '');
     if (isLoggedIn) {
       try {
         final user = await _api.me(apiBase);
-        email = '${user['email'] ?? email}';
-        role = '${user['role'] ?? role}';
-        name = '${user['name'] ?? name}';
-        locationId = _asInt(user['locationId']) ?? locationId;
-        locationName = '${user['locationName'] ?? locationName}';
-        final newToken = '${user['token'] ?? ''}';
-        if (newToken.isNotEmpty) token = newToken;
+        _applyUser(user);
         await _persist();
       } catch (_) {
         await logout();
@@ -75,6 +75,17 @@ class AuthStore extends ChangeNotifier {
     name = out.name;
     locationId = out.locationId;
     locationName = out.locationName;
+    assignedLocations = out.assignedLocations;
+    selectedLocationId = out.assignedLocations.isNotEmpty
+        ? out.assignedLocations.first
+        : out.locationId;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> selectLocation(int? id, {String name = ''}) async {
+    selectedLocationId = id;
+    if (name.isNotEmpty) locationName = name;
     await _persist();
     notifyListeners();
   }
@@ -86,6 +97,8 @@ class AuthStore extends ChangeNotifier {
     name = '';
     locationId = null;
     locationName = '';
+    assignedLocations = [];
+    selectedLocationId = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('authToken');
     await prefs.remove('authEmail');
@@ -93,6 +106,8 @@ class AuthStore extends ChangeNotifier {
     await prefs.remove('authName');
     await prefs.remove('authLocationId');
     await prefs.remove('authLocationName');
+    await prefs.remove('authSelectedLocationId');
+    await prefs.remove('authAssignedLocations');
     notifyListeners();
   }
 
@@ -107,6 +122,24 @@ class AuthStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _applyUser(Map<String, dynamic> user) {
+    email = '${user['email'] ?? email}';
+    role = '${user['role'] ?? role}';
+    name = '${user['name'] ?? name}';
+    locationId = _asInt(user['locationId']) ?? locationId;
+    locationName = '${user['locationName'] ?? locationName}';
+    assignedLocations = _listInts(user['assignedLocations']);
+    if (assignedLocations.isEmpty && locationId != null) {
+      assignedLocations = [locationId!];
+    }
+    if (selectedLocationId == null ||
+        (!isAdmin && assignedLocations.isNotEmpty && !assignedLocations.contains(selectedLocationId))) {
+      selectedLocationId = assignedLocations.isNotEmpty ? assignedLocations.first : locationId;
+    }
+    final newToken = '${user['token'] ?? ''}';
+    if (newToken.isNotEmpty) token = newToken;
+  }
+
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
     if (token == null) return;
@@ -116,6 +149,23 @@ class AuthStore extends ChangeNotifier {
     await prefs.setString('authName', name);
     await prefs.setString('authLocationId', '${locationId ?? ''}');
     await prefs.setString('authLocationName', locationName);
+    await prefs.setString('authSelectedLocationId', '${selectedLocationId ?? ''}');
+    await prefs.setString('authAssignedLocations', assignedLocations.join(','));
+  }
+
+  List<int> _ints(String raw) => [
+        for (final p in raw.split(','))
+          if (int.tryParse(p.trim()) != null) int.parse(p.trim()),
+      ];
+
+  List<int> _listInts(dynamic v) {
+    if (v is List) {
+      return [
+        for (final x in v)
+          if (_asInt(x) != null) _asInt(x)!,
+      ];
+    }
+    return _ints('$v');
   }
 
   int? _asInt(dynamic v) {
