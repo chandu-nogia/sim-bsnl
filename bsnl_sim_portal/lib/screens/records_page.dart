@@ -5,7 +5,9 @@ import '../app_theme.dart';
 import '../services/api_service.dart';
 import '../services/pdf_export.dart';
 import '../state/auth_store.dart';
+import '../util/format.dart';
 import '../widgets/fade_in.dart';
+import '../widgets/location_picker.dart';
 
 enum RecordFieldKind { text, date, choice }
 
@@ -93,17 +95,20 @@ class _RecordsPageState extends State<RecordsPage> {
           title: existing == null ? 'Add ${widget.title}' : 'Update ${widget.title}',
           fields: widget.fields,
           initial: existing,
+          auth: widget.auth,
+          locationId: asInt(existing?['locationId']) ?? widget.locationId,
         ),
       ),
     );
     if (body == null || !mounted) return;
     try {
       final id = existing == null ? null : _idOf(existing);
+      final loc = int.tryParse(body['locationId'] ?? '') ?? widget.locationId;
       if (existing == null) {
-        await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: widget.locationId);
+        await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: loc);
       } else {
         if (id == null) throw ApiException('Entry id nahi mili');
-        await widget.auth.api.updateRow(widget.auth.apiBase, widget.path, id, body, locationId: widget.locationId);
+        await widget.auth.api.updateRow(widget.auth.apiBase, widget.path, id, body, locationId: loc);
       }
       await _load();
     } catch (e) {
@@ -134,7 +139,12 @@ class _RecordsPageState extends State<RecordsPage> {
     );
     if (ok != true || !mounted) return;
     try {
-      await widget.auth.api.deleteRow(widget.auth.apiBase, widget.path, id, locationId: widget.locationId);
+      await widget.auth.api.deleteRow(
+        widget.auth.apiBase,
+        widget.path,
+        id,
+        locationId: asInt(row['locationId']) ?? widget.locationId,
+      );
       await _load();
     } catch (e) {
       if (mounted) {
@@ -147,11 +157,12 @@ class _RecordsPageState extends State<RecordsPage> {
     await downloadRecordsPdf(
       context,
       title: widget.title,
-      headers: ['S.No.', ...widget.fields.map((f) => f.label)],
+      headers: ['S.No.', 'Jagah', ...widget.fields.map((f) => f.label)],
       rows: [
         for (var i = 0; i < _rows.length; i++)
           [
             '${i + 1}',
+            '${_rows[i]['locationName'] ?? widget.locationName ?? ''}',
             for (final f in widget.fields) '${_rows[i][f.key] ?? ''}',
           ],
       ],
@@ -227,6 +238,7 @@ class _RecordsPageState extends State<RecordsPage> {
                                 dataRowMaxHeight: 58,
                                 columns: [
                                   const DataColumn(label: Text('S.No.'), numeric: true),
+                                  const DataColumn(label: Text('Jagah')),
                                   for (final f in widget.fields) DataColumn(label: Text(f.label)),
                                   if (canWrite) const DataColumn(label: Text('Actions')),
                                 ],
@@ -246,6 +258,7 @@ class _RecordsPageState extends State<RecordsPage> {
                                             ),
                                           ),
                                         ),
+                                        DataCell(Text('${_rows[i]['locationName'] ?? widget.locationName ?? ''}')),
                                         for (final f in widget.fields)
                                           DataCell(_cellValue(_rows[i], f)),
                                         if (canWrite)
@@ -300,10 +313,14 @@ class RecordFormPage extends StatefulWidget {
     required this.title,
     required this.fields,
     this.initial,
+    this.auth,
+    this.locationId,
   });
   final String title;
   final List<RecordField> fields;
   final Map<String, dynamic>? initial;
+  final AuthStore? auth;
+  final int? locationId;
 
   @override
   State<RecordFormPage> createState() => _RecordFormPageState();
@@ -313,10 +330,13 @@ class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, TextEditingController> _ctrls;
   late final Map<String, DateTime> _dates;
   late final Map<String, String> _choices;
+  int? _locationId;
+  List<LocationOption> _locations = [];
 
   @override
   void initState() {
     super.initState();
+    _locationId = widget.locationId ?? asInt(widget.initial?['locationId']);
     _ctrls = {
       for (final f in widget.fields)
         if (f.kind == RecordFieldKind.text)
@@ -331,6 +351,20 @@ class _RecordFormPageState extends State<RecordFormPage> {
         if (f.kind == RecordFieldKind.choice)
           f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
     };
+    _loadLocations();
+  }
+
+  Future<void> _loadLocations() async {
+    final auth = widget.auth;
+    if (auth == null) return;
+    try {
+      final rows = await loadLocationOptions(auth);
+      if (!mounted) return;
+      setState(() {
+        _locations = rows;
+        _locationId ??= rows.length == 1 ? rows.first.id : null;
+      });
+    } catch (_) {}
   }
 
   String _choiceValue(RecordField f, String raw) {
@@ -348,6 +382,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
 
   Map<String, String> _body() {
     return {
+      'locationId': '${_locationId ?? ''}',
       for (final f in widget.fields)
         f.key: switch (f.kind) {
           RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
@@ -377,10 +412,20 @@ class _RecordFormPageState extends State<RecordFormPage> {
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
           children: [
             Text(
-              adding ? 'Sirf is entry ke fields bharo — list yahan nahi dikhegi.' : 'Is entry ko update karo.',
+              adding
+                  ? 'Jagah choose karo — ye entry sirf usi location ke portal mein save hogi.'
+                  : 'Is entry ko update karo.',
               style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
+            if (widget.auth != null) ...[
+              JagahField(
+                locations: _locations,
+                value: _locationId,
+                onChanged: (v) => setState(() => _locationId = v),
+              ),
+              const SizedBox(height: 14),
+            ],
             for (final f in widget.fields)
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
@@ -413,7 +458,15 @@ class _RecordFormPageState extends State<RecordFormPage> {
               ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: () => Navigator.pop(context, _body()),
+              onPressed: () {
+                if (widget.auth != null && _locationId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Jagah choose karo')),
+                  );
+                  return;
+                }
+                Navigator.pop(context, _body());
+              },
               icon: Icon(adding ? Icons.add : Icons.save_outlined),
               label: Text(adding ? 'Save' : 'Update'),
             ),

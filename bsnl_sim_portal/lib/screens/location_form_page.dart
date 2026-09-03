@@ -89,19 +89,19 @@ class _LocationFormPageState extends State<LocationFormPage> {
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
           children: [
             const Text(
-              'Nayi jagah add hote hi uske liye BSNL Portal, CBC List aur C-TopUp available ho jate hain. Employees alag se assign karo.',
+              'Nayi jagah add karo (Jaipur, Sikar, …). Us jagah ke apne 3 portals automatically milenge: BSNL Portal, CBC List, C-TopUp. Khatu ka data dusri jagah mein nahi dikhega.',
               style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Location name *', hintText: 'Khatu Shyam Ji'),
+              decoration: const InputDecoration(labelText: 'Jagah ka naam *', hintText: 'Jaipur'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _code,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Location code', hintText: 'KHATU'),
+              decoration: const InputDecoration(labelText: 'Jagah code', hintText: 'JPR'),
             ),
             const SizedBox(height: 12),
             TextField(

@@ -59,6 +59,7 @@ class EntryTable extends StatelessWidget {
                   dataRowMaxHeight: 56,
                   columns: [
                     const DataColumn(label: Text('#'), numeric: true),
+                    const DataColumn(label: Text('Jagah')),
                     const DataColumn(label: Text('Date')),
                     const DataColumn(label: Text('Name')),
                     const DataColumn(label: Text('Type')),
@@ -89,15 +90,8 @@ class EntryTable extends StatelessWidget {
         even ? Colors.white : const Color(0xFFF4F7FB),
       ),
       cells: [
-        DataCell(
-          Text(
-            '$index',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
+        DataCell(Text('$index', style: const TextStyle(fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()]))),
+        DataCell(Text(e.locationName.isEmpty ? '—' : e.locationName)),
         DataCell(Text(e.date)),
         DataCell(Text(e.name, style: const TextStyle(fontWeight: FontWeight.w600))),
         DataCell(_TypeChip(type: e.type)),
@@ -264,7 +258,9 @@ class _MobileTile extends StatelessWidget {
         ),
       ),
       title: Text(e.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text('${e.mobile}  •  FRC ${e.frc.isEmpty ? "—" : e.frc}\n${e.date}  •  ${e.simNo}'),
+      subtitle: Text(
+        '${e.locationName.isEmpty ? "" : "${e.locationName}  •  "}${e.mobile}  •  FRC ${e.frc.isEmpty ? "—" : e.frc}\n${e.date}  •  ${e.simNo}',
+      ),
       isThreeLine: true,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

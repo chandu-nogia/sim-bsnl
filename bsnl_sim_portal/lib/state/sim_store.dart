@@ -166,13 +166,13 @@ class SimStore extends ChangeNotifier {
     );
   }
 
-  Future<void> addEntry(SimEntry entry) async {
+  Future<void> addEntry(SimEntry entry, {int? locationId}) async {
     if (!canWrite) throw ApiException('Add karne ki permission nahi');
     error = null;
     notifyListeners();
     try {
       if (useApi) {
-        await _api.add(apiBase, entry, locationId: locationId ?? auth.effectiveLocationId);
+        await _api.add(apiBase, entry, locationId: locationId ?? this.locationId ?? auth.effectiveLocationId);
         await load();
       } else {
         entries = [...entries, entry];
@@ -187,13 +187,17 @@ class SimStore extends ChangeNotifier {
     }
   }
 
-  Future<void> updateEntry(SimEntry original, SimEntry updated) async {
+  Future<void> updateEntry(SimEntry original, SimEntry updated, {int? locationId}) async {
     if (!canWrite) throw ApiException('Update karne ki permission nahi');
     error = null;
     notifyListeners();
     try {
       if (useApi) {
-        await _api.update(apiBase, updated.copyWith(rowIndex: original.rowIndex), locationId: locationId ?? auth.effectiveLocationId);
+        await _api.update(
+          apiBase,
+          updated.copyWith(rowIndex: original.rowIndex),
+          locationId: locationId ?? this.locationId ?? original.locationId ?? auth.effectiveLocationId,
+        );
         await load();
       } else {
         final i = _indexOf(original);

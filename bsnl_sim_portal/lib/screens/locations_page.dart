@@ -110,7 +110,7 @@ class _LocationsPageState extends State<LocationsPage> {
             children: [
               const Expanded(
                 child: Text(
-                  'Har location ke saath BSNL Portal, CBC aur C-TopUp automatically milte hain.',
+                  'Har jagah ke apne 3 portals: BSNL Portal, CBC, C-TopUp. Form se nayi jagah add karo.',
                   style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
                 ),
               ),

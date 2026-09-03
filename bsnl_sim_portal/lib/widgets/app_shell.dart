@@ -234,17 +234,23 @@ class _AppShellState extends State<AppShell> {
               '${r['name'] ?? ''}${r['status'] == 'inactive' ? ' (off)' : ''}',
             ),
         ].where((e) => e.$1 > 0).toList();
-        final switcher = locChoices.length <= 1
+        final currentInList = locChoices.any((e) => e.$1 == _locId);
+        final switcher = !auth.isAdmin && locChoices.length <= 1
             ? Text(
-                _locName.isEmpty ? (auth.isAdmin ? 'All locations' : 'No location') : _locName,
+                _locName.isEmpty ? 'No location' : _locName,
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               )
             : DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
+                child: DropdownButton<int?>(
                   dropdownColor: BsnlColors.navyDark,
-                  value: locChoices.any((e) => e.$1 == _locId) ? _locId : locChoices.first.$1,
+                  value: auth.isAdmin && !currentInList ? null : (currentInList ? _locId : (locChoices.isEmpty ? null : locChoices.first.$1)),
                   iconEnabledColor: Colors.white,
                   items: [
+                    if (auth.isAdmin)
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('Sabhi jagah', style: TextStyle(color: Colors.white)),
+                      ),
                     for (final c in locChoices)
                       DropdownMenuItem(
                         value: c.$1,
@@ -252,10 +258,14 @@ class _AppShellState extends State<AppShell> {
                       ),
                   ],
                   onChanged: (id) async {
-                    if (id == null) return;
-                    final name = locChoices.firstWhere((e) => e.$1 == id).$2.replaceAll(' (off)', '');
-                    await auth.selectLocation(id, name: name);
-                    widget.simStore.setLocation(id);
+                    if (id == null) {
+                      await auth.selectLocation(null, name: 'Sabhi jagah');
+                      widget.simStore.setLocation(null);
+                    } else {
+                      final name = locChoices.firstWhere((e) => e.$1 == id).$2.replaceAll(' (off)', '');
+                      await auth.selectLocation(id, name: name);
+                      widget.simStore.setLocation(id);
+                    }
                     if (_section == 'portal' || _section == 'users') widget.simStore.load();
                     setState(() {});
                   },

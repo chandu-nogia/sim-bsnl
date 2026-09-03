@@ -5,6 +5,7 @@ import '../app_theme.dart';
 import '../models/sim_entry.dart';
 import '../state/sim_store.dart';
 import 'fade_in.dart';
+import 'location_picker.dart';
 
 Future<void> showEntryForm(
   BuildContext context,
@@ -35,6 +36,8 @@ class _EntryFormPageState extends State<_EntryFormPage> {
   SimType _type = SimType.cymn;
   String _frc = '';
   bool _saving = false;
+  int? _locationId;
+  List<LocationOption> _locations = [];
 
   bool get _editing => widget.existing != null;
 
@@ -42,14 +45,30 @@ class _EntryFormPageState extends State<_EntryFormPage> {
   void initState() {
     super.initState();
     final e = widget.existing;
-    if (e == null) return;
-    _name.text = e.name;
-    _mobile.text = e.mobile;
-    _alt.text = e.altNumber;
-    _sim.text = e.simNo;
-    _date = _parseDate(e.date);
-    _type = e.type;
-    _frc = frcChoices.contains(e.frc) ? e.frc : '';
+    if (e != null) {
+      _name.text = e.name;
+      _mobile.text = e.mobile;
+      _alt.text = e.altNumber;
+      _sim.text = e.simNo;
+      _date = _parseDate(e.date);
+      _type = e.type;
+      _frc = frcChoices.contains(e.frc) ? e.frc : '';
+      _locationId = e.locationId ?? widget.store.locationId ?? widget.store.auth.effectiveLocationId;
+    } else {
+      _locationId = widget.store.locationId ?? widget.store.auth.effectiveLocationId;
+    }
+    _loadLocations();
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      final rows = await loadLocationOptions(widget.store.auth);
+      if (!mounted) return;
+      setState(() {
+        _locations = rows;
+        _locationId ??= widget.store.locationId ?? widget.store.auth.effectiveLocationId ?? (rows.length == 1 ? rows.first.id : null);
+      });
+    } catch (_) {}
   }
 
   DateTime _parseDate(String raw) {
@@ -91,6 +110,12 @@ class _EntryFormPageState extends State<_EntryFormPage> {
 
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
+    if (_locationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Jagah choose karo')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     final existing = widget.existing;
     final entry = SimEntry(
@@ -108,9 +133,9 @@ class _EntryFormPageState extends State<_EntryFormPage> {
     );
     try {
       if (existing != null) {
-        await widget.store.updateEntry(existing, entry);
+        await widget.store.updateEntry(existing, entry, locationId: _locationId);
       } else {
-        await widget.store.addEntry(entry);
+        await widget.store.addEntry(entry, locationId: _locationId);
       }
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -143,7 +168,7 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Sirf is SIM ke fields — poori list yahan nahi dikhegi.',
+                      'Har entry ek jagah ki hoti hai. Khatu ka data Khatu mein, Jaipur ka Jaipur mein.',
                       style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 14),
@@ -151,6 +176,13 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                       child: SingleChildScrollView(
                         child: Column(
                           children: [
+                            JagahField(
+                              locations: _locations,
+                              value: _locationId,
+                              onChanged: (v) => setState(() => _locationId = v),
+                              enabled: !_editing || widget.store.auth.isAdmin || _locations.length > 1,
+                            ),
+                            const SizedBox(height: 12),
                             Row(
                               children: [
                                 Expanded(

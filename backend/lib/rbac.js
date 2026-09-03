@@ -12,9 +12,9 @@ function assignedIds(user) {
 
 function requestedLocationId(req, body) {
   const raw =
+    (body && body.locationId) ||
     req.headers['x-location-id'] ||
-    req.query?.locationId ||
-    (body && body.locationId);
+    req.query?.locationId;
   return Number.parseInt(String(raw ?? ''), 10) || 0;
 }
 

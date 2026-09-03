@@ -50,6 +50,8 @@ class SimEntry {
     required this.simNo,
     this.simLast6 = '',
     this.status = 'Issued',
+    this.locationId,
+    this.locationName = '',
   });
 
   final int? rowIndex;
@@ -63,6 +65,8 @@ class SimEntry {
   final String simNo;
   final String simLast6;
   final String status;
+  final int? locationId;
+  final String locationName;
 
   String get last6 {
     if (simLast6.isNotEmpty) return simLast6;
@@ -83,6 +87,8 @@ class SimEntry {
     String? simNo,
     String? simLast6,
     String? status,
+    int? locationId,
+    String? locationName,
   }) {
     return SimEntry(
       rowIndex: rowIndex ?? this.rowIndex,
@@ -96,6 +102,8 @@ class SimEntry {
       simNo: simNo ?? this.simNo,
       simLast6: simLast6 ?? this.simLast6,
       status: status ?? this.status,
+      locationId: locationId ?? this.locationId,
+      locationName: locationName ?? this.locationName,
     );
   }
 
@@ -134,6 +142,8 @@ class SimEntry {
       simNo: s('sim', 'SIM No.'),
       simLast6: s('last6', 'SIM Last 6'),
       status: s('status', 'Status').isEmpty ? 'Issued' : s('status', 'Status'),
+      locationId: int.tryParse('${m['locationId'] ?? ''}'),
+      locationName: s('locationName'),
     );
   }
 
