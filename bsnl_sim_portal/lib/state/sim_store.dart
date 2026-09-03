@@ -67,10 +67,17 @@ class SimStore extends ChangeNotifier {
     useApi = prefs.getBool('useApi') ?? true;
     try {
       if (useApi) {
-        entries = await _api.list(apiBase, locationId: locationId ?? auth.effectiveLocationId);
-        connected = true;
-        final host = apiBase.isEmpty ? 'is site' : apiBase;
-        statusMessage = 'Server ($host) se ${entries.length} entries';
+        final loc = locationId ?? auth.effectiveLocationId;
+        if (auth.isAdmin && loc == null) {
+          entries = [];
+          connected = true;
+          statusMessage = 'Pehle jagah choose karo — har jagah ka Portal alag hai';
+        } else {
+          entries = await _api.list(apiBase, locationId: loc);
+          connected = true;
+          final host = apiBase.isEmpty ? 'is site' : apiBase;
+          statusMessage = 'Server ($host) se ${entries.length} entries';
+        }
       } else {
         connected = false;
         await _loadLocal(prefs);
@@ -80,12 +87,7 @@ class SimStore extends ChangeNotifier {
       connected = false;
       error = e.toString();
       statusMessage = null;
-      try {
-        await _loadLocal(prefs);
-        statusMessage =
-            'Server nahi mila, local data dikh raha hai. cd backend && npm start';
-        error = null;
-      } catch (_) {}
+      entries = [];
     } finally {
       loading = false;
       notifyListeners();

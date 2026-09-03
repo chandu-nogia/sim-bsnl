@@ -83,15 +83,16 @@ class _EmployeesPageState extends State<EmployeesPage> {
     if ('${row['role']}' == 'admin') return;
     final inactive = '${row['status']}' == 'inactive';
     try {
+      final loc = asInt(row['locationId']) ??
+          ((row['assignedLocations'] is List && (row['assignedLocations'] as List).isNotEmpty)
+              ? asInt((row['assignedLocations'] as List).first)
+              : null);
       await widget.auth.api.saveEmployee(
         widget.auth.apiBase,
         id: '${row['email']}',
         name: '${row['name'] ?? ''}',
         email: '${row['email'] ?? ''}',
-        assignedLocations: [
-          for (final x in (row['assignedLocations'] as List? ?? []) )
-            if (asInt(x) != null) asInt(x)!,
-        ],
+        assignedLocations: loc == null ? <int>[] : [loc],
         status: inactive ? 'active' : 'inactive',
       );
       await _load();
@@ -136,7 +137,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
             children: [
               const Expanded(
                 child: Text(
-                  'Assign one or more locations. Employee sirf unhi jagahon ka data dekhega.',
+                  'Assign one location. Employee login ke baad sirf usi jagah ka BSNL Portal / CBC / C-TopUp dekhega.',
                   style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -170,7 +171,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                             columns: const [
                               DataColumn(label: Text('Name')),
                               DataColumn(label: Text('Email')),
-                              DataColumn(label: Text('Locations')),
+                              DataColumn(label: Text('Assigned Location')),
                               DataColumn(label: Text('Role')),
                               DataColumn(label: Text('Status')),
                               DataColumn(label: Text('Created')),
@@ -248,8 +249,9 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
   late final TextEditingController _name;
   late final TextEditingController _email;
   late final TextEditingController _password;
-  late Set<int> _assigned;
+  int? _locationId;
   String _status = 'active';
+  final String _role = 'employee';
   bool _busy = false;
   String? _error;
 
@@ -261,10 +263,11 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
     _name = TextEditingController(text: '${widget.existing?['name'] ?? ''}');
     _email = TextEditingController(text: '${widget.existing?['email'] ?? ''}');
     _password = TextEditingController();
-    _assigned = {
-      for (final x in (widget.existing?['assignedLocations'] as List? ?? []))
-        if (asInt(x) != null) asInt(x)!,
-    };
+    _locationId = asInt(widget.existing?['locationId']);
+    if (_locationId == null) {
+      final assigned = widget.existing?['assignedLocations'];
+      if (assigned is List && assigned.isNotEmpty) _locationId = asInt(assigned.first);
+    }
     _status = '${widget.existing?['status'] ?? 'active'}';
   }
 
@@ -277,6 +280,10 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
   }
 
   Future<void> _save() async {
+    if (_locationId == null) {
+      setState(() => _error = 'Assigned Location choose karo');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -288,7 +295,7 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
         name: _name.text.trim(),
         email: _email.text.trim(),
         password: _password.text.trim(),
-        assignedLocations: _assigned.toList(),
+        assignedLocations: _locationId == null ? <int>[] : [_locationId!],
         status: _status,
       );
       if (mounted) Navigator.pop(context, true);
@@ -307,18 +314,41 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
           children: [
-            TextField(controller: _name, decoration: const InputDecoration(labelText: 'Name *')),
+            TextField(controller: _name, decoration: const InputDecoration(labelText: 'Employee Name *')),
             const SizedBox(height: 12),
             TextField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email *'),
+              decoration: const InputDecoration(labelText: 'Email / Login ID *'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _password,
               obscureText: true,
               decoration: InputDecoration(labelText: _editing ? 'New password (optional)' : 'Password *'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              // ignore: deprecated_member_use
+              value: _role,
+              decoration: const InputDecoration(labelText: 'Role'),
+              items: const [DropdownMenuItem(value: 'employee', child: Text('Employee'))],
+              onChanged: null,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              // ignore: deprecated_member_use
+              value: widget.locations.any((l) => asInt(l['id']) == _locationId) ? _locationId : null,
+              decoration: const InputDecoration(
+                labelText: 'Assigned Location *',
+                prefixIcon: Icon(Icons.place_outlined),
+              ),
+              items: [
+                for (final loc in widget.locations)
+                  if (asInt(loc['id']) != null)
+                    DropdownMenuItem(value: asInt(loc['id']), child: Text('${loc['name']}')),
+              ],
+              onChanged: (v) => setState(() => _locationId = v),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -330,30 +360,6 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
                 DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
               ],
               onChanged: (v) => setState(() => _status = v ?? 'active'),
-            ),
-            const SizedBox(height: 16),
-            const Text('Assigned locations', style: TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final loc in widget.locations)
-                  FilterChip(
-                    label: Text('${loc['name']}'),
-                    selected: _assigned.contains(asInt(loc['id'])),
-                    onSelected: (on) {
-                      final id = asInt(loc['id']);
-                      if (id == null) return;
-                      setState(() {
-                        if (on) {
-                          _assigned.add(id);
-                        } else {
-                          _assigned.remove(id);
-                        }
-                      });
-                    },
-                  ),
-              ],
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),

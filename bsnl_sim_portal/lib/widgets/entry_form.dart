@@ -180,7 +180,7 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                               locations: _locations,
                               value: _locationId,
                               onChanged: (v) => setState(() => _locationId = v),
-                              enabled: !_editing || widget.store.auth.isAdmin || _locations.length > 1,
+                              enabled: widget.store.auth.isAdmin,
                             ),
                             const SizedBox(height: 12),
                             Row(

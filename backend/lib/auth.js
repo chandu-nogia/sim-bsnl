@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const rbac = require('./rbac');
+const { getDb } = require('./db');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'chandu@gmail.com').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu20';
@@ -158,8 +159,10 @@ async function seedUsers(db) {
   const others = await users.find({ role: 'employee', email: { $ne: EMPLOYEE_EMAIL } }).toArray();
   for (const u of others) {
     const assigned = assignedOf(u);
+    const one = assigned[0] || (u.locationId ? Number(u.locationId) : 0);
     const patch = {
-      assignedLocations: assigned.length ? assigned : (u.locationId ? [Number(u.locationId)] : []),
+      assignedLocations: one ? [one] : [],
+      locationId: one || null,
       status: u.status === 'inactive' ? 'inactive' : 'active',
     };
     if (!u.id) patch.id = await nextId(db, 'users');
@@ -173,13 +176,16 @@ async function seedUsers(db) {
           { locationId: { $exists: false } },
           { locationId: null },
           { locationId: 0 },
-          { locationName: 'Khatu' },
-          { locationName: DEFAULT_LOCATION },
-          { locationId: locId },
+          { locationId: '' },
         ],
       },
       { $set: { locationId: locId, locationName: khatu.name } },
     );
+    const rows = await db.collection(col).find({ locationId: { $type: 'string' } }).toArray();
+    for (const r of rows) {
+      const n = Number.parseInt(String(r.locationId), 10);
+      if (n) await db.collection(col).updateOne({ _id: r._id }, { $set: { locationId: n } });
+    }
   }
 }
 
@@ -225,6 +231,16 @@ async function login(db, body) {
   if (user.status === 'inactive') {
     return { status: 403, json: { ok: false, error: 'Account deactivate hai. Admin se baat karo.' } };
   }
+  if (user.role !== 'admin') {
+    const assigned = assignedOf(user);
+    const one = assigned[0] || Number(user.locationId) || 0;
+    if (one) {
+      const loc = await db.collection('locations').findOne({ id: one });
+      user.locationId = one;
+      user.assignedLocations = [one];
+      user.locationName = loc?.name || user.locationName || '';
+    }
+  }
   await logActivity(db, {
     email: user.email,
     role: user.role,
@@ -245,16 +261,35 @@ async function login(db, body) {
   };
 }
 
-function requireUser(req, res, next) {
-  const user = readToken(req);
-  if (!user) {
+async function requireUser(req, res, next) {
+  const tokenUser = readToken(req);
+  if (!tokenUser) {
     return res.status(401).json({ ok: false, error: 'Login karo' });
   }
-  if (user.status === 'inactive') {
-    return res.status(403).json({ ok: false, error: 'Account deactivate hai' });
+  try {
+    const db = await getDb();
+    const row = await db.collection('users').findOne({ email: tokenUser.email });
+    if (!row) {
+      return res.status(401).json({ ok: false, error: 'Login karo' });
+    }
+    if (row.status === 'inactive') {
+      return res.status(403).json({ ok: false, error: 'Account deactivate hai' });
+    }
+    const assigned = row.role === 'admin' ? [] : assignedOf(row);
+    req.user = {
+      id: row.id ? Number(row.id) : null,
+      email: row.email,
+      role: row.role,
+      name: row.name || '',
+      status: row.status === 'inactive' ? 'inactive' : 'active',
+      locationId: row.role === 'admin' ? null : (assigned[0] || null),
+      locationName: row.locationName || '',
+      assignedLocations: assigned,
+    };
+    next();
+  } catch (e) {
+    next(e);
   }
-  req.user = user;
-  next();
 }
 
 function requireAdmin(req, res, next) {

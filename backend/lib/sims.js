@@ -2,7 +2,7 @@
 
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
-const { mongoListQuery } = require('./rbac');
+const { mongoListQuery, applyTextSearch } = require('./rbac');
 
 function publicRow(row) {
   const id = Number(row.id);
@@ -59,12 +59,8 @@ function validate(row) {
 }
 
 async function listSims(db, scope = {}) {
-  const q = mongoListQuery(scope);
-  const search = String(scope.q || '').trim();
-  if (search) {
-    const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
-    q.$or = [{ name: rx }, { mobile: rx }, { sim: rx }, { last6: rx }];
-  }
+  let q = mongoListQuery(scope);
+  q = applyTextSearch(q, ['name', 'mobile', 'sim', 'last6'], scope.q);
   const from = String(scope.from || '').slice(0, 10);
   const to = String(scope.to || '').slice(0, 10);
   if (from || to) {

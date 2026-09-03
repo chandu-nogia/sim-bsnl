@@ -12,6 +12,7 @@ import '../screens/reports_page.dart';
 import '../screens/settings_page.dart';
 import '../state/auth_store.dart';
 import '../state/sim_store.dart';
+import '../util/format.dart';
 
 class _NavItem {
   const _NavItem(this.id, this.label, this.icon, {this.adminOnly = false});
@@ -73,16 +74,12 @@ class _AppShellState extends State<AppShell> {
       final rows = await auth.api.listLocations(auth.apiBase);
       if (!mounted) return;
       setState(() => _locations = rows);
-      if (auth.effectiveLocationId == null && rows.isNotEmpty) {
-        final first = rows.first;
-        final id = int.tryParse('${first['id']}') ?? 0;
-        if (id > 0) {
-          await auth.selectLocation(id, name: '${first['name'] ?? ''}');
-        }
-      } else if (auth.locationName.isEmpty && auth.effectiveLocationId != null) {
+      if (!auth.isAdmin) {
         for (final r in rows) {
           if ('${r['id']}' == '${auth.effectiveLocationId}') {
-            await auth.selectLocation(auth.effectiveLocationId, name: '${r['name'] ?? ''}');
+            if (auth.locationName.isEmpty) {
+              await auth.selectLocation(auth.effectiveLocationId, name: '${r['name'] ?? ''}');
+            }
             break;
           }
         }
@@ -107,8 +104,38 @@ class _AppShellState extends State<AppShell> {
     setState(() => _section = id);
     if (id == 'portal' || id == 'users') {
       widget.simStore.setLocation(_locId);
-      widget.simStore.load();
+      if (_locId != null) widget.simStore.load();
     }
+  }
+
+  Future<void> _openLocation(int id, String name, String section) async {
+    if (id <= 0) return;
+    await auth.selectLocation(id, name: name);
+    widget.simStore.setLocation(id);
+    _go(section);
+  }
+
+  Widget _pickLocationFirst() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Pehle jagah choose karo. Har jagah ka BSNL Portal / CBC / C-TopUp alag table hai.',
+          style: TextStyle(fontWeight: FontWeight.w700, color: BsnlColors.navyDark),
+        ),
+        const SizedBox(height: 12),
+        for (final r in _locations)
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.place_outlined, color: BsnlColors.navy),
+              title: Text('${r['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: const Text('Is jagah ka data alag table mein khulega'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openLocation(asInt(r['id']) ?? 0, '${r['name'] ?? ''}', _section),
+            ),
+          ),
+      ],
+    );
   }
 
   Widget _body() {
@@ -125,6 +152,7 @@ class _AppShellState extends State<AppShell> {
         return SettingsPage(store: widget.simStore, nested: true);
       case 'portal':
       case 'users':
+        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
         return HomePage(
           key: ValueKey('portal-$_locId'),
           store: widget.simStore,
@@ -132,6 +160,7 @@ class _AppShellState extends State<AppShell> {
           nested: true,
         );
       case 'cbc':
+        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
         return CbcPage(
           key: ValueKey('cbc-$_locId'),
           auth: auth,
@@ -140,6 +169,7 @@ class _AppShellState extends State<AppShell> {
           nested: true,
         );
       case 'ctopup':
+        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
         return CtopupPage(
           key: ValueKey('ctopup-$_locId'),
           auth: auth,
@@ -155,12 +185,14 @@ class _AppShellState extends State<AppShell> {
           locationId: _locId ?? 0,
           locationName: _locName,
           embedded: true,
+          onOpenModule: (section) => _openLocation(_locId ?? 0, _locName, section),
         );
       default:
         return DashboardHome(
           auth: auth,
           simStore: widget.simStore,
           onOpenSection: _go,
+          onOpenLocation: _openLocation,
           onLocationsChanged: _loadLocations,
         );
     }
@@ -235,42 +267,45 @@ class _AppShellState extends State<AppShell> {
             ),
         ].where((e) => e.$1 > 0).toList();
         final currentInList = locChoices.any((e) => e.$1 == _locId);
-        final switcher = !auth.isAdmin && locChoices.length <= 1
-            ? Text(
-                _locName.isEmpty ? 'No location' : _locName,
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              )
-            : DropdownButtonHideUnderline(
-                child: DropdownButton<int?>(
-                  dropdownColor: BsnlColors.navyDark,
-                  value: auth.isAdmin && !currentInList ? null : (currentInList ? _locId : (locChoices.isEmpty ? null : locChoices.first.$1)),
-                  iconEnabledColor: Colors.white,
-                  items: [
-                    if (auth.isAdmin)
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('Sabhi jagah', style: TextStyle(color: Colors.white)),
-                      ),
-                    for (final c in locChoices)
-                      DropdownMenuItem(
-                        value: c.$1,
-                        child: Text(c.$2, style: const TextStyle(color: Colors.white)),
-                      ),
-                  ],
-                  onChanged: (id) async {
-                    if (id == null) {
-                      await auth.selectLocation(null, name: 'Sabhi jagah');
-                      widget.simStore.setLocation(null);
-                    } else {
-                      final name = locChoices.firstWhere((e) => e.$1 == id).$2.replaceAll(' (off)', '');
-                      await auth.selectLocation(id, name: name);
-                      widget.simStore.setLocation(id);
-                    }
-                    if (_section == 'portal' || _section == 'users') widget.simStore.load();
-                    setState(() {});
-                  },
+        final Widget switcher;
+        if (!auth.isAdmin) {
+          switcher = Text(
+            _locName.isEmpty ? 'Assigned location' : _locName,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          );
+        } else {
+          switcher = DropdownButtonHideUnderline(
+            child: DropdownButton<int?>(
+              dropdownColor: BsnlColors.navyDark,
+              value: currentInList ? _locId : null,
+              iconEnabledColor: Colors.white,
+              items: [
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('All Locations', style: TextStyle(color: Colors.white)),
                 ),
-              );
+                for (final c in locChoices)
+                  DropdownMenuItem(
+                    value: c.$1,
+                    child: Text(c.$2, style: const TextStyle(color: Colors.white)),
+                  ),
+              ],
+              onChanged: (id) async {
+                if (id == null) {
+                  await auth.selectLocation(null, name: 'All Locations');
+                  widget.simStore.setLocation(null);
+                  _go('dashboard');
+                  return;
+                }
+                final name = locChoices.firstWhere((e) => e.$1 == id).$2.replaceAll(' (off)', '');
+                await auth.selectLocation(id, name: name);
+                widget.simStore.setLocation(id);
+                if (_section == 'portal' || _section == 'users') widget.simStore.load();
+                setState(() {});
+              },
+            ),
+          );
+        }
 
         final bar = AppBar(
           title: Column(

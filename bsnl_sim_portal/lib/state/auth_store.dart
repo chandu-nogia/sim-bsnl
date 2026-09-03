@@ -27,7 +27,11 @@ class AuthStore extends ChangeNotifier {
   bool get isLoggedIn => (token ?? '').isNotEmpty;
   bool get isAdmin => role == 'admin';
   bool get canWrite => isLoggedIn;
-  int? get effectiveLocationId => selectedLocationId ?? locationId;
+  int? get effectiveLocationId {
+    if (isAdmin) return selectedLocationId ?? locationId;
+    if (locationId != null) return locationId;
+    return assignedLocations.isEmpty ? null : assignedLocations.first;
+  }
 
   String get apiBase {
     final saved = (apiUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
@@ -84,8 +88,15 @@ class AuthStore extends ChangeNotifier {
   }
 
   Future<void> selectLocation(int? id, {String name = ''}) async {
+    if (!isAdmin) {
+      if (id != null && effectiveLocationId != null && id != effectiveLocationId) return;
+      if (name.isNotEmpty) locationName = name;
+      await _persist();
+      notifyListeners();
+      return;
+    }
     selectedLocationId = id;
-    if (name.isNotEmpty) locationName = name;
+    locationName = name;
     await _persist();
     notifyListeners();
   }

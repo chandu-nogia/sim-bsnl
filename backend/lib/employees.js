@@ -9,13 +9,21 @@ function asIds(v) {
   return [...new Set(v.map((x) => Number(x)).filter(Boolean))];
 }
 
+function pickLocationIds(body) {
+  const one = Number.parseInt(String(body?.locationId ?? ''), 10) || 0;
+  if (one) return [one];
+  return asIds(body?.assignedLocations).slice(0, 1);
+}
+
 function publicEmployee(row, locNames = {}) {
   const assigned = asIds(row.assignedLocations);
+  const locationId = assigned[0] || (row.locationId ? Number(row.locationId) : null);
   return {
     id: row.id ? Number(row.id) : null,
     name: row.name || '',
     email: row.email || '',
     role: row.role || 'employee',
+    locationId,
     assignedLocations: assigned,
     assignedLocationNames: assigned.map((id) => locNames[id] || `#${id}`),
     status: row.status === 'inactive' ? 'inactive' : 'active',
@@ -45,12 +53,12 @@ async function addEmployee(db, actor, body) {
   const name = String(body?.name ?? '').trim();
   const email = String(body?.email ?? '').trim().toLowerCase();
   const password = String(body?.password ?? '');
-  const assigned = asIds(body?.assignedLocations);
+  const assigned = pickLocationIds(body);
   const status = body?.status === 'inactive' ? 'inactive' : 'active';
   if (!name) return { status: 400, json: { ok: false, error: 'Naam likho' } };
   if (!email || !email.includes('@')) return { status: 400, json: { ok: false, error: 'Email likho' } };
   if (password.length < 4) return { status: 400, json: { ok: false, error: 'Password kam se kam 4 character' } };
-  if (!assigned.length) return { status: 400, json: { ok: false, error: 'Kam se kam ek jagah assign karo' } };
+  if (!assigned.length) return { status: 400, json: { ok: false, error: 'Assigned location choose karo' } };
   const exists = await db.collection('users').findOne({ email });
   if (exists) return { status: 400, json: { ok: false, error: 'Ye email pehle se hai' } };
   const locs = await db.collection('locations').find({ id: { $in: assigned } }).toArray();
@@ -100,9 +108,11 @@ async function updateEmployee(db, actor, idRaw, body) {
   const name = String(body?.name ?? user.name).trim() || user.name;
   const email = String(body?.email ?? user.email).trim().toLowerCase() || user.email;
   const status = body?.status === 'inactive' ? 'inactive' : body?.status === 'active' ? 'active' : (user.status || 'active');
-  let assigned = body?.assignedLocations != null ? asIds(body.assignedLocations) : asIds(user.assignedLocations);
+  let assigned = body?.locationId != null || body?.assignedLocations != null
+    ? pickLocationIds(body)
+    : asIds(user.assignedLocations).slice(0, 1);
   if (user.role === 'employee' && !assigned.length) {
-    return { status: 400, json: { ok: false, error: 'Kam se kam ek jagah assign karo' } };
+    return { status: 400, json: { ok: false, error: 'Assigned location choose karo' } };
   }
   if (email !== user.email) {
     const taken = await db.collection('users').findOne({ email });

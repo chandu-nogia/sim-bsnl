@@ -20,32 +20,23 @@ function requestedLocationId(req, body) {
 
 function listScope(req) {
   const ids = assignedIds(req.user);
+  if (ids !== null) {
+    if (!ids.length) return { error: 'Is account ki koi jagah nahi', status: 403 };
+    return { locationId: ids[0] };
+  }
   const requested = requestedLocationId(req, {});
-  if (ids === null) {
-    return requested ? { locationId: requested } : {};
-  }
-  if (!ids.length) return { error: 'Is account ki koi jagah nahi', status: 403 };
-  if (requested) {
-    if (!ids.includes(requested)) {
-      return { error: 'Is jagah ki permission nahi', status: 403 };
-    }
-    return { locationId: requested };
-  }
-  if (ids.length === 1) return { locationId: ids[0] };
-  return { locationIds: ids };
+  if (requested) return { locationId: requested };
+  return { empty: true };
 }
 
 function writeScope(req, body) {
   const ids = assignedIds(req.user);
-  let requested = requestedLocationId(req, body || {});
-  if (ids === null) {
-    if (!requested) return { error: 'Jagah choose karo', status: 400 };
-    return { locationId: requested };
+  if (ids !== null) {
+    if (!ids.length) return { error: 'Is account ki koi jagah nahi', status: 403 };
+    return { locationId: ids[0] };
   }
-  if (!requested && ids.length === 1) requested = ids[0];
-  if (!requested || !ids.includes(requested)) {
-    return { error: 'Is jagah ki permission nahi', status: 403 };
-  }
+  const requested = requestedLocationId(req, body || {});
+  if (!requested) return { error: 'Jagah choose karo', status: 400 };
   return { locationId: requested };
 }
 
@@ -59,11 +50,35 @@ function assertRowLocation(req, row) {
 }
 
 function mongoListQuery(scope) {
-  if (scope.locationId) return { locationId: Number(scope.locationId) };
-  if (scope.locationIds && scope.locationIds.length) {
-    return { locationId: { $in: scope.locationIds.map(Number) } };
+  if (scope.empty) return { id: { $in: [] } };
+  if (scope.all) return {};
+  if (scope.locationId) {
+    const id = Number(scope.locationId);
+    return { $or: [{ locationId: id }, { locationId: String(id) }] };
   }
-  return {};
+  if (scope.locationIds && scope.locationIds.length) {
+    const nums = scope.locationIds.map(Number);
+    return {
+      $or: [{ locationId: { $in: nums } }, { locationId: { $in: nums.map(String) } }],
+    };
+  }
+  return { id: { $in: [] } };
+}
+
+function applyTextSearch(q, fields, search) {
+  const s = String(search || '').trim();
+  if (!s || !fields.length) return q;
+  const rx = { $regex: s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+  const searchOr = fields.map((f) => ({ [f]: rx }));
+  const locOr = q.$or;
+  if (locOr) {
+    const next = { ...q };
+    delete next.$or;
+    next.$and = [{ $or: locOr }, { $or: searchOr }];
+    return next;
+  }
+  q.$or = searchOr;
+  return q;
 }
 
 module.exports = {
@@ -73,4 +88,5 @@ module.exports = {
   writeScope,
   assertRowLocation,
   mongoListQuery,
+  applyTextSearch,
 };

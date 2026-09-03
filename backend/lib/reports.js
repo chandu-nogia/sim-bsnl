@@ -25,6 +25,7 @@ async function buildReport(db, user, query) {
   const locFilter = Number.parseInt(String(query?.locationId || ''), 10) || 0;
   if (ids === null) {
     if (locFilter) scope.locationId = locFilter;
+    else scope.all = true;
   } else {
     if (locFilter && !ids.includes(locFilter)) {
       return { status: 403, json: { ok: false, error: 'Is jagah ki permission nahi' } };

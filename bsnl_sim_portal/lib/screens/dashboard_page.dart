@@ -16,11 +16,13 @@ class DashboardHome extends StatefulWidget {
     required this.auth,
     required this.simStore,
     this.onOpenSection,
+    this.onOpenLocation,
     this.onLocationsChanged,
   });
   final AuthStore auth;
   final SimStore simStore;
   final ValueChanged<String>? onOpenSection;
+  final Future<void> Function(int id, String name, String section)? onOpenLocation;
   final VoidCallback? onLocationsChanged;
 
   @override
@@ -158,9 +160,49 @@ class _DashboardHomeState extends State<DashboardHome> {
               },
             ),
             const SizedBox(height: 18),
+            const Text('All Locations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+            const SizedBox(height: 4),
+            const Text(
+              'Combined overview only. Records mixed nahi hote — jagah par click karke uska Portal / CBC / C-TopUp kholo.',
+              style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
+                  headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                  columns: const [
+                    DataColumn(label: Text('Location')),
+                    DataColumn(label: Text('BSNL Portal')),
+                    DataColumn(label: Text('CBC List')),
+                    DataColumn(label: Text('C-TopUp')),
+                    DataColumn(label: Text('Employees')),
+                  ],
+                  rows: [
+                    for (final row in _locations)
+                      DataRow(
+                        cells: [
+                          DataCell(
+                            Text('${row['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                            onTap: () => _openLoc(row, 'mylocation'),
+                          ),
+                          DataCell(Text('${asNum(row['sims']).round()}'), onTap: () => _openLoc(row, 'portal')),
+                          DataCell(Text('${asNum(row['cbcCount']).round()}'), onTap: () => _openLoc(row, 'cbc')),
+                          DataCell(Text('${asNum(row['ctopupCount']).round()}'), onTap: () => _openLoc(row, 'ctopup')),
+                          DataCell(Text('${asNum(row['employees']).round()}')),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
             Row(
               children: [
-                const Text('Locations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+                const Text('Location-wise data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
                 const Spacer(),
                 TextButton(
                   onPressed: () => widget.onOpenSection?.call('locations'),
@@ -172,11 +214,10 @@ class _DashboardHomeState extends State<DashboardHome> {
             for (final row in _locations)
               _LocationCard(
                 row: row,
-                onOpen: () async {
-                  final id = asInt(row['id']) ?? 0;
-                  await auth.selectLocation(id, name: '${row['name'] ?? ''}');
-                  widget.onOpenSection?.call('mylocation');
-                },
+                onOpen: () => _openLoc(row, 'mylocation'),
+                onOpenPortal: () => _openLoc(row, 'portal'),
+                onOpenCbc: () => _openLoc(row, 'cbc'),
+                onOpenCtopup: () => _openLoc(row, 'ctopup'),
               ),
             const SizedBox(height: 16),
             const Text('Recent activity', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
@@ -205,6 +246,12 @@ class _DashboardHomeState extends State<DashboardHome> {
               simStore: widget.simStore,
               locationId: auth.effectiveLocationId,
               locationName: auth.locationName,
+              onOpenModule: widget.onOpenLocation == null
+                  ? null
+                  : (section) {
+                      final id = auth.effectiveLocationId ?? 0;
+                      widget.onOpenLocation!(id, auth.locationName, section);
+                    },
             ),
           ],
         ],
@@ -215,6 +262,17 @@ class _DashboardHomeState extends State<DashboardHome> {
   String _locTitle() {
     if (auth.locationName.isNotEmpty) return '${auth.locationName} dashboard';
     return 'My location';
+  }
+
+  Future<void> _openLoc(Map<String, dynamic> row, String section) async {
+    final id = asInt(row['id']) ?? 0;
+    final name = '${row['name'] ?? ''}';
+    if (widget.onOpenLocation != null) {
+      await widget.onOpenLocation!(id, name, section);
+      return;
+    }
+    await auth.selectLocation(id, name: name);
+    widget.onOpenSection?.call(section);
   }
 }
 
@@ -259,9 +317,18 @@ class _StatGrid extends StatelessWidget {
 }
 
 class _LocationCard extends StatelessWidget {
-  const _LocationCard({required this.row, required this.onOpen});
+  const _LocationCard({
+    required this.row,
+    required this.onOpen,
+    required this.onOpenPortal,
+    required this.onOpenCbc,
+    required this.onOpenCtopup,
+  });
   final Map<String, dynamic> row;
   final VoidCallback onOpen;
+  final VoidCallback onOpenPortal;
+  final VoidCallback onOpenCbc;
+  final VoidCallback onOpenCtopup;
 
   @override
   Widget build(BuildContext context) {
@@ -306,11 +373,32 @@ class _LocationCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  _chip('Portal ${asNum(row['sims']).round()}'),
+                  _chip('CBC ${asNum(row['cbcCount']).round()}'),
+                  _chip('C-TopUp ${asNum(row['ctopupCount']).round()}'),
                   _chip('Employees ${asNum(row['employees']).round()}'),
-                  _chip('New users ${asNum(row['newUsers']).round()}'),
-                  _chip('CBC ${rupee(asNum(row['cbcAmount']))}'),
-                  _chip('C-TopUp ${rupee(asNum(row['ctopupAmount']))}'),
-                  _chip('Txns ${asNum(row['transactions']).round()}'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onOpenPortal,
+                    icon: const Icon(Icons.sim_card_outlined, size: 16),
+                    label: const Text('BSNL Portal'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onOpenCbc,
+                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                    label: const Text('CBC List'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onOpenCtopup,
+                    icon: const Icon(Icons.payments_outlined, size: 16),
+                    label: const Text('C-TopUp'),
+                  ),
                 ],
               ),
             ],
@@ -366,12 +454,14 @@ class LocationHubPage extends StatelessWidget {
     required this.locationId,
     required this.locationName,
     this.embedded = false,
+    this.onOpenModule,
   });
   final AuthStore auth;
   final SimStore simStore;
   final int locationId;
   final String locationName;
   final bool embedded;
+  final void Function(String section)? onOpenModule;
 
   @override
   Widget build(BuildContext context) {
@@ -393,6 +483,7 @@ class LocationHubPage extends StatelessWidget {
           simStore: simStore,
           locationId: locationId,
           locationName: locationName,
+          onOpenModule: onOpenModule,
         ),
       ],
     );
@@ -411,11 +502,38 @@ class LocationPortalGrid extends StatelessWidget {
     required this.simStore,
     required this.locationId,
     required this.locationName,
+    this.onOpenModule,
   });
   final AuthStore auth;
   final SimStore simStore;
   final int? locationId;
   final String locationName;
+  final void Function(String section)? onOpenModule;
+
+  void _open(BuildContext context, String section) {
+    final id = locationId;
+    if (onOpenModule != null) {
+      onOpenModule!(section);
+      return;
+    }
+    if (section == 'portal') {
+      simStore.setLocation(id);
+      simStore.load();
+      Navigator.of(context).push(
+        fadeRoute(HomePage(store: simStore, locationName: locationName)),
+      );
+      return;
+    }
+    if (section == 'cbc') {
+      Navigator.of(context).push(
+        fadeRoute(CbcPage(auth: auth, locationId: id, locationName: locationName)),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      fadeRoute(CtopupPage(auth: auth, locationId: id, locationName: locationName)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -426,13 +544,7 @@ class LocationPortalGrid extends StatelessWidget {
         subtitle: 'CYMN / MNP / Swap / Postpaid',
         icon: Icons.sim_card_outlined,
         colors: const [Color(0xFF0B3D91), Color(0xFF1A73E8)],
-        onTap: () {
-          simStore.setLocation(locationId);
-          simStore.load();
-          Navigator.of(context).push(
-            fadeRoute(HomePage(store: simStore, locationName: locationName)),
-          );
-        },
+        onTap: () => _open(context, 'portal'),
       ),
       _PortalData(
         index: '02',
@@ -440,11 +552,7 @@ class LocationPortalGrid extends StatelessWidget {
         subtitle: 'Date, amount, transaction ID',
         icon: Icons.receipt_long_outlined,
         colors: const [Color(0xFF0E7490), Color(0xFF22C55E)],
-        onTap: () {
-          Navigator.of(context).push(
-            fadeRoute(CbcPage(auth: auth, locationId: locationId, locationName: locationName)),
-          );
-        },
+        onTap: () => _open(context, 'cbc'),
       ),
       _PortalData(
         index: '03',
@@ -452,11 +560,7 @@ class LocationPortalGrid extends StatelessWidget {
         subtitle: 'Number, amount, payment status',
         icon: Icons.payments_outlined,
         colors: const [Color(0xFF7C3AED), Color(0xFFEC4899)],
-        onTap: () {
-          Navigator.of(context).push(
-            fadeRoute(CtopupPage(auth: auth, locationId: locationId, locationName: locationName)),
-          );
-        },
+        onTap: () => _open(context, 'ctopup'),
       ),
     ];
     return LayoutBuilder(

@@ -92,7 +92,7 @@ async function writeMeta(req, body) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-2' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-3' });
 });
 
 app.get('/api/health', async (_req, res) => {

@@ -2,7 +2,7 @@
 
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
-const { mongoListQuery } = require('./rbac');
+const { mongoListQuery, applyTextSearch } = require('./rbac');
 
 function publicCbc(row) {
   const id = Number(row.id);
@@ -93,12 +93,8 @@ function actorLabel(meta) {
 function makeCrud(collection, pick, validate, toPublic, section) {
   return {
     async list(db, scope = {}) {
-      const q = mongoListQuery(scope);
-      const search = String(scope.q || '').trim();
-      if (search) {
-        const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
-        q.$or = [{ name: rx }, { mobile: rx }, { number: rx }, { transactionId: rx }];
-      }
+      let q = mongoListQuery(scope);
+      q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId'], scope.q);
       const from = String(scope.from || '').slice(0, 10);
       const to = String(scope.to || '').slice(0, 10);
       if (from || to) {

@@ -320,6 +320,7 @@ class ApiService {
       'name': name,
       'email': email,
       'assignedLocations': assignedLocations,
+      if (assignedLocations.isNotEmpty) 'locationId': assignedLocations.first,
       'status': status,
       if (password.isNotEmpty) 'password': password,
     };

@@ -423,6 +423,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
                 locations: _locations,
                 value: _locationId,
                 onChanged: (v) => setState(() => _locationId = v),
+                enabled: widget.auth?.isAdmin ?? false,
               ),
               const SizedBox(height: 14),
             ],
