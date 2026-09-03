@@ -6,6 +6,7 @@ const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const rbac = require('./rbac');
 const { getDb } = require('./db');
+const { repairEmployeeLocations } = require('./location_resolve');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'chandu@gmail.com').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu20';
@@ -168,6 +169,8 @@ async function seedUsers(db) {
     if (!u.id) patch.id = await nextId(db, 'users');
     await users.updateOne({ email: u.email }, { $set: patch });
   }
+
+  await repairEmployeeLocations(db);
 
   for (const col of ['sims', 'cbc', 'ctopup']) {
     await db.collection(col).updateMany(

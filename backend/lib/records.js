@@ -3,6 +3,7 @@
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
+const { locationMatchQuery } = require('./location_resolve');
 
 function publicCbc(row) {
   const id = Number(row.id);
@@ -109,8 +110,10 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const skip = (page - 1) * limit;
       const col = db.collection(collection);
       const total = await col.countDocuments(q);
-      const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
-      return { rows: rows.map(toPublic), total, page, limit };
+      let rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+      const locId = Number(scope.locationId);
+      if (locId) rows = rows.filter((r) => Number(r.locationId) === locId);
+      return { rows: rows.map(toPublic), total: locId ? rows.length : total, page, limit };
     },
     async add(db, body, meta) {
       const row = pick(body);
@@ -144,8 +147,10 @@ function makeCrud(collection, pick, validate, toPublic, section) {
     },
     async update(db, idRaw, body, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
+      const locId = Number(meta.locationId);
       if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-      const existing = await db.collection(collection).findOne({ id });
+      if (!locId) return { status: 400, json: { ok: false, error: 'Jagah choose karo' } };
+      const existing = await db.collection(collection).findOne({ id, ...locationMatchQuery(locId) });
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
@@ -155,14 +160,14 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const saved = {
         ...row,
         id,
-        locationId: existing.locationId,
+        locationId: Number(existing.locationId),
         locationName: existing.locationName || meta.locationName || '',
         createdBy: existing.createdBy || meta.email || '',
         employeeId: existing.employeeId || (meta.userId ? Number(meta.userId) : null),
         createdAt: existing.createdAt || '',
         updatedAt: new Date().toISOString(),
       };
-      await db.collection(collection).updateOne({ id }, { $set: saved });
+      await db.collection(collection).updateOne({ _id: existing._id }, { $set: saved });
       await logActivity(db, {
         email: meta.email,
         role: meta.role,
@@ -177,12 +182,14 @@ function makeCrud(collection, pick, validate, toPublic, section) {
     },
     async remove(db, idRaw, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
+      const locId = Number(meta.locationId);
       if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-      const existing = await db.collection(collection).findOne({ id });
+      if (!locId) return { status: 400, json: { ok: false, error: 'Jagah choose karo' } };
+      const existing = await db.collection(collection).findOne({ id, ...locationMatchQuery(locId) });
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
-      await db.collection(collection).deleteOne({ id });
+      await db.collection(collection).deleteOne({ _id: existing._id });
       await logActivity(db, {
         email: meta.email,
         role: meta.role,

@@ -32,8 +32,10 @@ class SimStore extends ChangeNotifier {
   }
 
   List<SimEntry> get filtered {
+    final loc = auth.isAdmin ? locationId ?? auth.effectiveLocationId : auth.effectiveLocationId;
     final q = search.trim().toLowerCase();
     return entries.where((e) {
+      if (loc != null && e.locationId != null && e.locationId != loc) return false;
       if (typeFilter != 'All' && e.type.label != typeFilter) return false;
       if (frcFilter != 'All' && e.frc != frcFilter) return false;
       if (q.isEmpty) return true;
@@ -59,21 +61,30 @@ class SimStore extends ChangeNotifier {
     return entries.map((e) => e.sno).fold<int>(0, (a, b) => a > b ? a : b) + 1;
   }
 
+  int? get _queryLocationId {
+    if (auth.isAdmin) return locationId ?? auth.effectiveLocationId;
+    return auth.effectiveLocationId;
+  }
+
   Future<void> load() async {
     loading = true;
     error = null;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     useApi = prefs.getBool('useApi') ?? true;
+    if (kReleaseMode) useApi = true;
     try {
       if (useApi) {
-        final loc = locationId ?? auth.effectiveLocationId;
+        final loc = _queryLocationId;
         if (auth.isAdmin && loc == null) {
           entries = [];
           connected = true;
           statusMessage = 'Pehle jagah choose karo — har jagah ka Portal alag hai';
         } else {
           entries = await _api.list(apiBase, locationId: loc);
+          if (loc != null) {
+            entries = [for (final e in entries) if (e.locationId == null || e.locationId == loc) e];
+          }
           connected = true;
           final host = apiBase.isEmpty ? 'is site' : apiBase;
           statusMessage = 'Server ($host) se ${entries.length} entries';
@@ -174,7 +185,7 @@ class SimStore extends ChangeNotifier {
     notifyListeners();
     try {
       if (useApi) {
-        await _api.add(apiBase, entry, locationId: locationId ?? this.locationId ?? auth.effectiveLocationId);
+        await _api.add(apiBase, entry, locationId: locationId ?? _queryLocationId);
         await load();
       } else {
         entries = [...entries, entry];
@@ -198,7 +209,7 @@ class SimStore extends ChangeNotifier {
         await _api.update(
           apiBase,
           updated.copyWith(rowIndex: original.rowIndex),
-          locationId: locationId ?? this.locationId ?? original.locationId ?? auth.effectiveLocationId,
+          locationId: locationId ?? _queryLocationId ?? original.locationId,
         );
         await load();
       } else {
@@ -222,7 +233,7 @@ class SimStore extends ChangeNotifier {
     notifyListeners();
     try {
       if (useApi) {
-        await _api.delete(apiBase, entry, locationId: locationId ?? auth.effectiveLocationId);
+        await _api.delete(apiBase, entry, locationId: _queryLocationId ?? entry.locationId);
         await load();
       } else {
         final i = _indexOf(entry);

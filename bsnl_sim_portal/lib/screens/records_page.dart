@@ -61,18 +61,27 @@ class _RecordsPageState extends State<RecordsPage> {
     _load();
   }
 
+  int? get _scopeLocationId =>
+      widget.auth.isAdmin ? widget.locationId : widget.auth.effectiveLocationId;
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      final loc = _scopeLocationId;
       final rows = await widget.auth.api.listRows(
         widget.auth.apiBase,
         widget.path,
-        locationId: widget.locationId,
+        locationId: loc,
       );
-      setState(() => _rows = rows);
+      setState(() {
+        _rows = [
+          for (final r in rows)
+            if (loc == null || asInt(r['locationId']) == null || asInt(r['locationId']) == loc) r,
+        ];
+      });
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -96,14 +105,16 @@ class _RecordsPageState extends State<RecordsPage> {
           fields: widget.fields,
           initial: existing,
           auth: widget.auth,
-          locationId: asInt(existing?['locationId']) ?? widget.locationId,
+          locationId: asInt(existing?['locationId']) ?? _scopeLocationId,
         ),
       ),
     );
     if (body == null || !mounted) return;
     try {
       final id = existing == null ? null : _idOf(existing);
-      final loc = int.tryParse(body['locationId'] ?? '') ?? widget.locationId;
+      final loc = widget.auth.isAdmin
+          ? (int.tryParse(body['locationId'] ?? '') ?? _scopeLocationId)
+          : widget.auth.effectiveLocationId;
       if (existing == null) {
         await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: loc);
       } else {
@@ -143,7 +154,9 @@ class _RecordsPageState extends State<RecordsPage> {
         widget.auth.apiBase,
         widget.path,
         id,
-        locationId: asInt(row['locationId']) ?? widget.locationId,
+        locationId: widget.auth.isAdmin
+            ? (asInt(row['locationId']) ?? widget.locationId)
+            : widget.auth.effectiveLocationId,
       );
       await _load();
     } catch (e) {

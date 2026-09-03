@@ -159,6 +159,7 @@ class SimEntry {
         'sim': simNo,
         'last6': last6,
         'status': status,
+        if (locationId != null) 'locationId': locationId,
       };
 
   factory SimEntry.fromJson(Map<String, dynamic> j) => SimEntry.fromSheet(j);

@@ -313,7 +313,8 @@ class ApiService {
     required String name,
     required String email,
     String password = '',
-    required List<int> assignedLocations,
+    List<int> assignedLocations = const [],
+    String location = '',
     String status = 'active',
   }) async {
     final body = {
@@ -321,6 +322,8 @@ class ApiService {
       'email': email,
       'assignedLocations': assignedLocations,
       if (assignedLocations.isNotEmpty) 'locationId': assignedLocations.first,
+      if (location.trim().isNotEmpty) 'location': location.trim(),
+      if (location.trim().isNotEmpty) 'locationName': location.trim(),
       'status': status,
       if (password.isNotEmpty) 'password': password,
     };

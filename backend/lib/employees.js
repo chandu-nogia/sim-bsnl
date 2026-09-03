@@ -3,29 +3,26 @@
 const bcrypt = require('bcryptjs');
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
+const { resolveEmployeeLocation } = require('./location_resolve');
 
 function asIds(v) {
   if (!Array.isArray(v)) return [];
   return [...new Set(v.map((x) => Number(x)).filter(Boolean))];
 }
 
-function pickLocationIds(body) {
-  const one = Number.parseInt(String(body?.locationId ?? ''), 10) || 0;
-  if (one) return [one];
-  return asIds(body?.assignedLocations).slice(0, 1);
-}
-
 function publicEmployee(row, locNames = {}) {
   const assigned = asIds(row.assignedLocations);
   const locationId = assigned[0] || (row.locationId ? Number(row.locationId) : null);
+  const locationName = locNames[locationId] || row.locationName || '';
   return {
     id: row.id ? Number(row.id) : null,
     name: row.name || '',
     email: row.email || '',
     role: row.role || 'employee',
     locationId,
+    locationName,
     assignedLocations: assigned,
-    assignedLocationNames: assigned.map((id) => locNames[id] || `#${id}`),
+    assignedLocationNames: locationName ? [locationName] : assigned.map((id) => locNames[id] || `#${id}`),
     status: row.status === 'inactive' ? 'inactive' : 'active',
     createdAt: row.createdAt || '',
     updatedAt: row.updatedAt || '',
@@ -53,21 +50,20 @@ async function addEmployee(db, actor, body) {
   const name = String(body?.name ?? '').trim();
   const email = String(body?.email ?? '').trim().toLowerCase();
   const password = String(body?.password ?? '');
-  const assigned = pickLocationIds(body);
   const status = body?.status === 'inactive' ? 'inactive' : 'active';
   if (!name) return { status: 400, json: { ok: false, error: 'Naam likho' } };
   if (!email || !email.includes('@')) return { status: 400, json: { ok: false, error: 'Email likho' } };
   if (password.length < 4) return { status: 400, json: { ok: false, error: 'Password kam se kam 4 character' } };
-  if (!assigned.length) return { status: 400, json: { ok: false, error: 'Assigned location choose karo' } };
+  const resolved = await resolveEmployeeLocation(db, body);
+  if (resolved.error || !resolved.location) {
+    return { status: 400, json: { ok: false, error: resolved.error || 'Location likho' } };
+  }
   const exists = await db.collection('users').findOne({ email });
   if (exists) return { status: 400, json: { ok: false, error: 'Ye email pehle se hai' } };
-  const locs = await db.collection('locations').find({ id: { $in: assigned } }).toArray();
-  if (locs.length !== assigned.length) {
-    return { status: 400, json: { ok: false, error: 'Koi jagah galat hai' } };
-  }
   const id = await nextId(db, 'users');
   const now = new Date().toISOString();
-  const first = locs[0];
+  const first = resolved.location;
+  const assigned = [Number(first.id)];
   const row = {
     id,
     email,
@@ -108,22 +104,29 @@ async function updateEmployee(db, actor, idRaw, body) {
   const name = String(body?.name ?? user.name).trim() || user.name;
   const email = String(body?.email ?? user.email).trim().toLowerCase() || user.email;
   const status = body?.status === 'inactive' ? 'inactive' : body?.status === 'active' ? 'active' : (user.status || 'active');
-  let assigned = body?.locationId != null || body?.assignedLocations != null
-    ? pickLocationIds(body)
-    : asIds(user.assignedLocations).slice(0, 1);
-  if (user.role === 'employee' && !assigned.length) {
-    return { status: 400, json: { ok: false, error: 'Assigned location choose karo' } };
+  const hasLocInput =
+    body?.location != null ||
+    body?.locationName != null ||
+    body?.locationId != null ||
+    body?.assignedLocations != null;
+  let assigned = asIds(user.assignedLocations).slice(0, 1);
+  let locationId = user.locationId;
+  let locationName = user.locationName;
+  if (user.role === 'employee' && hasLocInput) {
+    const resolved = await resolveEmployeeLocation(db, body, user);
+    if (resolved.error || !resolved.location) {
+      return { status: 400, json: { ok: false, error: resolved.error || 'Location likho' } };
+    }
+    assigned = [Number(resolved.location.id)];
+    locationId = Number(resolved.location.id);
+    locationName = resolved.location.name || '';
+  }
+  if (user.role === 'employee' && !Number(locationId)) {
+    return { status: 400, json: { ok: false, error: 'Location likho' } };
   }
   if (email !== user.email) {
     const taken = await db.collection('users').findOne({ email });
     if (taken) return { status: 400, json: { ok: false, error: 'Ye email pehle se hai' } };
-  }
-  let locationId = user.locationId;
-  let locationName = user.locationName;
-  if (assigned.length) {
-    const loc = await db.collection('locations').findOne({ id: assigned[0] });
-    locationId = assigned[0];
-    locationName = loc?.name || locationName;
   }
   const set = {
     name,

@@ -10,7 +10,7 @@ async function ensureIndexes(db) {
     db.collection('locations').createIndex({ status: 1 }),
   ];
   for (const col of ['sims', 'cbc', 'ctopup']) {
-    jobs.push(db.collection(col).createIndex({ locationId: 1 }));
+    jobs.push(db.collection(col).createIndex({ locationId: 1, id: 1 }));
     jobs.push(db.collection(col).createIndex({ createdAt: 1 }));
     jobs.push(db.collection(col).createIndex({ employeeId: 1 }));
     jobs.push(db.collection(col).createIndex({ createdBy: 1 }));

@@ -3,6 +3,7 @@
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
+const { locationMatchQuery } = require('./location_resolve');
 
 function publicRow(row) {
   const id = Number(row.id);
@@ -73,8 +74,10 @@ async function listSims(db, scope = {}) {
   const skip = (page - 1) * limit;
   const col = db.collection('sims');
   const total = await col.countDocuments(q);
-  const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
-  return { rows: rows.map(publicRow), total, page, limit };
+  let rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+  const locId = Number(scope.locationId);
+  if (locId) rows = rows.filter((r) => Number(r.locationId) === locId);
+  return { rows: rows.map(publicRow), total: locId ? rows.length : total, page, limit };
 }
 
 async function addSim(db, body, meta) {
@@ -114,8 +117,10 @@ async function addSim(db, body, meta) {
 
 async function updateSim(db, idRaw, body, meta, assertRow) {
   const id = Number.parseInt(String(idRaw), 10);
+  const locId = Number(meta.locationId);
   if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-  const existing = await db.collection('sims').findOne({ id });
+  if (!locId) return { status: 400, json: { ok: false, error: 'Jagah choose karo' } };
+  const existing = await db.collection('sims').findOne({ id, ...locationMatchQuery(locId) });
   if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
   const blocked = await assertRow(existing);
   if (blocked) return blocked;
@@ -125,14 +130,14 @@ async function updateSim(db, idRaw, body, meta, assertRow) {
   const saved = {
     ...row,
     id,
-    locationId: existing.locationId,
+    locationId: Number(existing.locationId),
     locationName: existing.locationName || meta.locationName || '',
     createdBy: existing.createdBy || meta.email || '',
     employeeId: existing.employeeId || (meta.userId ? Number(meta.userId) : null),
     createdAt: existing.createdAt || '',
     updatedAt: new Date().toISOString(),
   };
-  await db.collection('sims').updateOne({ id }, { $set: saved });
+  await db.collection('sims').updateOne({ _id: existing._id }, { $set: saved });
   await logActivity(db, {
     email: meta.email,
     role: meta.role,
@@ -148,12 +153,14 @@ async function updateSim(db, idRaw, body, meta, assertRow) {
 
 async function deleteSim(db, idRaw, meta, assertRow) {
   const id = Number.parseInt(String(idRaw), 10);
+  const locId = Number(meta.locationId);
   if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
-  const existing = await db.collection('sims').findOne({ id });
+  if (!locId) return { status: 400, json: { ok: false, error: 'Jagah choose karo' } };
+  const existing = await db.collection('sims').findOne({ id, ...locationMatchQuery(locId) });
   if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
   const blocked = await assertRow(existing);
   if (blocked) return blocked;
-  await db.collection('sims').deleteOne({ id });
+  await db.collection('sims').deleteOne({ _id: existing._id });
   await logActivity(db, {
     email: meta.email,
     role: meta.role,

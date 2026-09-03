@@ -1,5 +1,7 @@
 'use strict';
 
+const { locationMatchQuery, rowBelongsToLocation } = require('./location_resolve');
+
 function assignedIds(user) {
   if (!user) return [];
   if (user.role === 'admin') return null;
@@ -40,10 +42,16 @@ function writeScope(req, body) {
   return { locationId: requested };
 }
 
-function assertRowLocation(req, row) {
+function assertRowLocation(req, row, locationId) {
   const ids = assignedIds(req.user);
-  if (ids === null) return null;
-  if (!ids.includes(Number(row.locationId))) {
+  const loc = Number(locationId || (ids && ids[0]) || 0);
+  if (ids !== null) {
+    if (!ids.length || !rowBelongsToLocation(row, ids[0])) {
+      return { status: 403, json: { ok: false, error: 'Ye entry dusri jagah ki hai' } };
+    }
+    return null;
+  }
+  if (loc && !rowBelongsToLocation(row, loc)) {
     return { status: 403, json: { ok: false, error: 'Ye entry dusri jagah ki hai' } };
   }
   return null;
@@ -52,12 +60,10 @@ function assertRowLocation(req, row) {
 function mongoListQuery(scope) {
   if (scope.empty) return { id: { $in: [] } };
   if (scope.all) return {};
-  if (scope.locationId) {
-    const id = Number(scope.locationId);
-    return { $or: [{ locationId: id }, { locationId: String(id) }] };
-  }
+  if (scope.locationId) return locationMatchQuery(scope.locationId);
   if (scope.locationIds && scope.locationIds.length) {
-    const nums = scope.locationIds.map(Number);
+    const nums = scope.locationIds.map(Number).filter(Boolean);
+    if (!nums.length) return { id: { $in: [] } };
     return {
       $or: [{ locationId: { $in: nums } }, { locationId: { $in: nums.map(String) } }],
     };

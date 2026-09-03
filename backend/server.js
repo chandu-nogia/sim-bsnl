@@ -92,7 +92,7 @@ async function writeMeta(req, body) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-3' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-4' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -258,7 +258,7 @@ app.put('/api/sims/:id', requireUser, async (req, res) => {
   try {
     const w = await writeMeta(req, req.body);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await updateSim(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row)));
+    send(res, await updateSim(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -268,7 +268,7 @@ app.delete('/api/sims/:id', requireUser, async (req, res) => {
   try {
     const w = await writeMeta(req, { locationId: req.query.locationId });
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await deleteSim(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row)));
+    send(res, await deleteSim(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -298,7 +298,7 @@ function mountCrud(prefix, api) {
     try {
       const w = await writeMeta(req, req.body);
       if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-      send(res, await api.update(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row)));
+      send(res, await api.update(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
@@ -307,7 +307,7 @@ function mountCrud(prefix, api) {
     try {
       const w = await writeMeta(req, { locationId: req.query.locationId });
       if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-      send(res, await api.remove(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row)));
+      send(res, await api.remove(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e.message || e) });
     }
