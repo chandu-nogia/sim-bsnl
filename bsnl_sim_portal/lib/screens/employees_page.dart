@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../state/auth_store.dart';
+import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
 class EmployeesPage extends StatefulWidget {
@@ -33,7 +34,13 @@ class _EmployeesPageState extends State<EmployeesPage> {
       final rows = await widget.auth.api.listEmployees(widget.auth.apiBase);
       final locs = await widget.auth.api.listLocations(widget.auth.apiBase);
       setState(() {
-        _rows = rows;
+        final loc = widget.auth.isAdmin ? widget.auth.effectiveLocationId : null;
+        _rows = loc == null
+            ? rows
+            : [
+                for (final r in rows)
+                  if ('${r['role']}' == 'admin' || asInt(r['locationId']) == loc) r,
+              ];
         _locations = locs;
       });
     } catch (e) {
@@ -330,6 +337,7 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _role,
+              readOnly: true,
               decoration: const InputDecoration(labelText: 'Role'),
             ),
             const SizedBox(height: 12),

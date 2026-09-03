@@ -53,6 +53,22 @@ class _LocationsPageState extends State<LocationsPage> {
     final id = asInt(row['id']);
     if (id == null) return;
     final active = '${row['status']}' != 'inactive';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(active ? 'Deactivate location?' : 'Activate location?'),
+        content: Text(
+          active
+              ? '${row['name']} inactive ho jayegi. BSNL / CBC / C-TopUp records safe rehte hain.'
+              : '${row['name']} dubara active ho jayegi.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(active ? 'Deactivate' : 'Activate')),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
       await widget.auth.api.updateLocation(
         widget.auth.apiBase,
@@ -64,36 +80,9 @@ class _LocationsPageState extends State<LocationsPage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(active ? 'Location deactivated' : 'Location activated')),
+          SnackBar(content: Text(active ? 'Location deactivated — records safe' : 'Location activated')),
         );
       }
-      await _load();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
-  }
-
-  Future<void> _delete(Map<String, dynamic> row) async {
-    final id = asInt(row['id']);
-    if (id == null) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete location?'),
-        content: Text('${row['name']} delete ho jayegi. Records rehte hain.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await widget.auth.api.deleteLocation(widget.auth.apiBase, id);
       await _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -164,10 +153,6 @@ class _LocationsPageState extends State<LocationsPage> {
                                   tooltip: off ? 'Activate' : 'Deactivate',
                                   onPressed: () => _deactivate(row),
                                   icon: Icon(off ? Icons.toggle_off_outlined : Icons.toggle_on_outlined),
-                                ),
-                                IconButton(
-                                  onPressed: () => _delete(row),
-                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFC62828)),
                                 ),
                               ],
                             ),

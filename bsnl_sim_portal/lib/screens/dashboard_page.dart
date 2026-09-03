@@ -118,6 +118,9 @@ class _DashboardHomeState extends State<DashboardHome> {
               items: [
                 ('Locations', '$_locationsCount', Icons.place_outlined, const Color(0xFF0B3D91)),
                 ('Employees', '$_employeesCount', Icons.badge_outlined, const Color(0xFF1A73E8)),
+                ('BSNL records', '${asNum(_totals['sims']).round()}', Icons.sim_card_outlined, const Color(0xFF0E7490)),
+                ('CBC records', '${asNum(_totals['cbcCount']).round()}', Icons.receipt_long_outlined, const Color(0xFF16A34A)),
+                ('CTOPUP records', '${asNum(_totals['ctopupCount']).round()}', Icons.payments_outlined, const Color(0xFF7C3AED)),
                 ('Total users', '${asNum(_totals['sims']).round()}', Icons.people_outline, const Color(0xFF0E7490)),
                 ('CBC amount', rupee(asNum(_totals['cbcAmount'])), Icons.receipt_long_outlined, const Color(0xFF16A34A)),
                 ('C-TopUp amount', rupee(asNum(_totals['ctopupAmount'])), Icons.payments_outlined, const Color(0xFF7C3AED)),
@@ -228,10 +231,15 @@ class _DashboardHomeState extends State<DashboardHome> {
               for (final a in _activity.take(12)) ActivityTile(row: a),
           ] else ...[
             Text(
-              _locTitle(),
+              'Welcome ${auth.name.isEmpty ? 'Employee' : auth.name}',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
+            Text(
+              'Assigned Location: ${_locTitleName()}',
+              style: const TextStyle(fontWeight: FontWeight.w700, color: BsnlColors.muted),
+            ),
+            const SizedBox(height: 14),
             _StatGrid(
               items: [
                 ('Users', '${asNum(_mine['sims']).round()}', Icons.people_outline, const Color(0xFF0E7490)),
@@ -259,9 +267,9 @@ class _DashboardHomeState extends State<DashboardHome> {
     );
   }
 
-  String _locTitle() {
-    if (auth.locationName.isNotEmpty) return '${auth.locationName} dashboard';
-    return 'My location';
+  String _locTitleName() {
+    if (auth.locationName.isNotEmpty) return auth.locationName;
+    return '—';
   }
 
   Future<void> _openLoc(Map<String, dynamic> row, String section) async {

@@ -8,6 +8,7 @@ import '../screens/dashboard_page.dart';
 import '../screens/employees_page.dart';
 import '../screens/home_page.dart';
 import '../screens/locations_page.dart';
+import '../screens/profile_page.dart';
 import '../screens/reports_page.dart';
 import '../screens/settings_page.dart';
 import '../state/auth_store.dart';
@@ -54,12 +55,10 @@ class _AppShellState extends State<AppShell> {
     }
     return const [
       _NavItem('dashboard', 'Dashboard', Icons.dashboard_outlined),
-      _NavItem('mylocation', 'My Location', Icons.place_outlined),
       _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
       _NavItem('cbc', 'CBC List', Icons.receipt_long_outlined),
       _NavItem('ctopup', 'C-TopUp', Icons.payments_outlined),
-      _NavItem('users', 'Users', Icons.people_outline),
-      _NavItem('activity', 'My Activity', Icons.history),
+      _NavItem('profile', 'Profile', Icons.person_outline),
     ];
   }
 
@@ -88,6 +87,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   String get _title {
+    if (_section == 'profile') return 'Profile';
     if (_section == 'mylocation') {
       return _locName.isEmpty ? 'My Location' : _locName;
     }
@@ -143,13 +143,15 @@ class _AppShellState extends State<AppShell> {
       case 'locations':
         return LocationsPage(auth: auth, onChanged: _loadLocations);
       case 'employees':
-        return EmployeesPage(auth: auth);
+        return EmployeesPage(key: ValueKey('emp-$_locId'), auth: auth);
       case 'reports':
         return ReportsPage(auth: auth);
       case 'activity':
         return ActivityPage(auth: auth);
       case 'settings':
         return SettingsPage(store: widget.simStore, nested: true);
+      case 'profile':
+        return ProfilePage(auth: auth);
       case 'portal':
       case 'users':
         if (auth.isAdmin && _locId == null) return _pickLocationFirst();
@@ -199,6 +201,83 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _sidebar(bool rail) {
+    final locTiles = [
+      for (final r in _locations)
+        if (asInt(r['id']) != null)
+          (
+            asInt(r['id'])!,
+            '${r['name'] ?? ''}${r['status'] == 'inactive' ? ' (off)' : ''}',
+          ),
+    ];
+
+    Widget branch(String section, String label, IconData icon) {
+      final selected = _section == section;
+      return Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          backgroundColor: Colors.transparent,
+          collapsedBackgroundColor: Colors.transparent,
+          leading: Icon(icon, color: selected ? BsnlColors.gold : Colors.white70),
+          title: rail
+              ? const SizedBox.shrink()
+              : Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.white70,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+          iconColor: Colors.white70,
+          collapsedIconColor: Colors.white54,
+          initiallyExpanded: selected,
+          children: [
+            ListTile(
+              dense: true,
+              title: rail ? null : const Text('All Locations', style: TextStyle(color: Colors.white70, fontSize: 13)),
+              onTap: () async {
+                await auth.selectLocation(null, name: 'All Locations');
+                widget.simStore.setLocation(null);
+                _go('dashboard');
+              },
+            ),
+            for (final loc in locTiles)
+              ListTile(
+                dense: true,
+                selected: selected && _locId == loc.$1,
+                title: rail
+                    ? null
+                    : Text(loc.$2, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                selectedTileColor: Colors.white12,
+                onTap: () => _openLocation(loc.$1, loc.$2.replaceAll(' (off)', ''), section),
+              ),
+          ],
+        ),
+      );
+    }
+
+    Widget tile(_NavItem item) {
+      return ListTile(
+        dense: true,
+        selected: _section == item.id,
+        leading: Icon(item.icon, color: _section == item.id ? BsnlColors.gold : Colors.white70),
+        title: rail
+            ? null
+            : Text(
+                item.label,
+                style: TextStyle(
+                  color: _section == item.id ? Colors.white : Colors.white70,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+        selectedTileColor: Colors.white12,
+        onTap: () {
+          _go(item.id);
+          if (!rail && Navigator.of(context).canPop()) Navigator.pop(context);
+        },
+      );
+    }
+
     final nav = ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: [
@@ -227,27 +306,93 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
         ),
-        for (final item in _items)
-          if (!item.adminOnly || auth.isAdmin)
-            ListTile(
-              dense: true,
-              selected: _section == item.id,
-              leading: Icon(item.icon, color: _section == item.id ? BsnlColors.gold : Colors.white70),
-              title: rail
-                  ? null
-                  : Text(
-                      item.label,
-                      style: TextStyle(
-                        color: _section == item.id ? Colors.white : Colors.white70,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-              selectedTileColor: Colors.white12,
-              onTap: () {
-                _go(item.id);
-                if (!rail && Navigator.of(context).canPop()) Navigator.pop(context);
-              },
+        if (auth.isAdmin) ...[
+          tile(const _NavItem('dashboard', 'Dashboard', Icons.dashboard_outlined)),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              backgroundColor: Colors.transparent,
+              collapsedBackgroundColor: Colors.transparent,
+              leading: Icon(
+                Icons.place_outlined,
+                color: _section == 'locations' ? BsnlColors.gold : Colors.white70,
+              ),
+              title: Text(
+                'Locations',
+                style: TextStyle(
+                  color: _section == 'locations' ? Colors.white : Colors.white70,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              iconColor: Colors.white70,
+              collapsedIconColor: Colors.white54,
+              initiallyExpanded: _section == 'locations',
+              children: [
+                ListTile(
+                  dense: true,
+                  title: const Text('All Locations', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  onTap: () => _go('locations'),
+                ),
+                ListTile(
+                  dense: true,
+                  title: const Text('Add Location', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  onTap: () => _go('locations'),
+                ),
+              ],
             ),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              backgroundColor: Colors.transparent,
+              collapsedBackgroundColor: Colors.transparent,
+              leading: Icon(
+                Icons.badge_outlined,
+                color: _section == 'employees' ? BsnlColors.gold : Colors.white70,
+              ),
+              title: Text(
+                'Employees',
+                style: TextStyle(
+                  color: _section == 'employees' ? Colors.white : Colors.white70,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              iconColor: Colors.white70,
+              collapsedIconColor: Colors.white54,
+              initiallyExpanded: _section == 'employees',
+              children: [
+                ListTile(
+                  dense: true,
+                  title: const Text('All Employees', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  onTap: () async {
+                    await auth.selectLocation(null, name: 'All Locations');
+                    _go('employees');
+                  },
+                ),
+                for (final loc in locTiles)
+                  ListTile(
+                    dense: true,
+                    title: Text(loc.$2, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    onTap: () async {
+                      await auth.selectLocation(loc.$1, name: loc.$2.replaceAll(' (off)', ''));
+                      _go('employees');
+                    },
+                  ),
+              ],
+            ),
+          ),
+          branch('portal', 'BSNL Portal', Icons.sim_card_outlined),
+          branch('cbc', 'CBC List', Icons.receipt_long_outlined),
+          branch('ctopup', 'C-TopUp', Icons.payments_outlined),
+          tile(const _NavItem('users', 'Users', Icons.people_outline)),
+          tile(const _NavItem('reports', 'Reports', Icons.assessment_outlined, adminOnly: true)),
+          tile(const _NavItem('activity', 'Activity Logs', Icons.history)),
+          tile(const _NavItem('settings', 'Settings', Icons.settings_outlined, adminOnly: true)),
+        ] else ...[
+          for (final item in _items) tile(item),
+        ],
       ],
     );
     return ColoredBox(color: BsnlColors.navyDark, child: nav);
@@ -270,7 +415,7 @@ class _AppShellState extends State<AppShell> {
         final Widget switcher;
         if (!auth.isAdmin) {
           switcher = Text(
-            _locName.isEmpty ? 'Assigned location' : _locName,
+            _locName.isEmpty ? 'Assigned Location' : 'Assigned Location: $_locName',
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           );
         } else {
@@ -337,7 +482,7 @@ class _AppShellState extends State<AppShell> {
             appBar: bar,
             body: Row(
               children: [
-                SizedBox(width: 232, child: _sidebar(false)),
+                SizedBox(width: 248, child: _sidebar(false)),
                 Expanded(child: content),
               ],
             ),

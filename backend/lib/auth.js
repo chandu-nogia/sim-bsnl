@@ -401,22 +401,25 @@ async function deleteLocation(db, user, idRaw) {
   if (!id) return { status: 400, json: { ok: false, error: 'Invalid id' } };
   const loc = await db.collection('locations').findOne({ id });
   if (!loc) return { status: 404, json: { ok: false, error: 'Jagah nahi mili' } };
-  await db.collection('locations').deleteOne({ id });
-  await db.collection('users').updateMany(
-    { assignedLocations: id, role: 'employee' },
-    { $pull: { assignedLocations: id } },
+  const now = new Date().toISOString();
+  await db.collection('locations').updateOne(
+    { id },
+    { $set: { status: 'inactive', updatedAt: now } },
   );
   await logActivity(db, {
     email: user.email,
     role: user.role,
     name: user.name,
-    action: 'delete',
+    action: 'update',
     section: 'location',
     locationId: id,
     locationName: loc.name,
-    detail: `${user.name || user.email} deleted location ${loc.name} (records rehte hain)`,
+    detail: `${user.name || user.email} deactivated location ${loc.name} (records safe)`,
   });
-  return { status: 200, json: { ok: true } };
+  return {
+    status: 200,
+    json: { ok: true, location: publicLocation({ ...loc, status: 'inactive', updatedAt: now }) },
+  };
 }
 
 async function locationNameOf(db, locationId) {

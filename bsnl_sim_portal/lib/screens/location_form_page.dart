@@ -95,7 +95,7 @@ class _LocationFormPageState extends State<LocationFormPage> {
             const SizedBox(height: 16),
             TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Jagah ka naam *', hintText: 'Jaipur'),
+              decoration: const InputDecoration(labelText: 'Location Name', hintText: 'Khatu Shyam Ji'),
             ),
             const SizedBox(height: 12),
             TextField(
