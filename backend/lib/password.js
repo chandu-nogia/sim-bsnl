@@ -13,7 +13,11 @@ function validatePassword(raw, { required = true } = {}) {
 }
 
 function moneyNumber(v) {
-  const n = Number(String(v ?? '').replace(/[^0-9.]/g, ''));
+  let s = String(v ?? '').trim().replace(/,/g, '');
+  const neg = s.startsWith('-');
+  s = s.replace(/[^0-9.]/g, '');
+  if (!s || s === '.') return 0;
+  const n = Number((neg ? '-' : '') + s);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
 

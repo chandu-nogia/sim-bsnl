@@ -109,7 +109,6 @@ class _EntryFormPageState extends State<_EntryFormPage> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
     if (_locationId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Jagah choose karo')),
@@ -168,7 +167,7 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Har entry ek jagah ki hoti hai. Khatu ka data Khatu mein, Jaipur ka Jaipur mein.',
+                      'Koi field required nahi. Text, dash (-) ya decimal amount bhi save ho sakta hai.',
                       style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 14),
@@ -199,11 +198,11 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: DropdownButtonFormField<SimType>(
+                                    child: DropdownButtonFormField<SimType>(
                                     // ignore: deprecated_member_use
                                     value: _type,
                                     decoration: const InputDecoration(
-                                      labelText: 'Type *',
+                                      labelText: 'Type',
                                     ),
                                     items: [
                                       for (final t in SimType.values)
@@ -222,11 +221,9 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                               controller: _name,
                               textCapitalization: TextCapitalization.words,
                               decoration: const InputDecoration(
-                                labelText: 'Name *',
+                                labelText: 'Name',
                                 prefixIcon: Icon(Icons.person_outline),
                               ),
-                              validator: (v) =>
-                                  (v == null || v.trim().isEmpty) ? 'Naam likho' : null,
                             ),
                             const SizedBox(height: 12),
                             Row(
@@ -234,38 +231,21 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                                 Expanded(
                                   child: TextFormField(
                                     controller: _mobile,
-                                    keyboardType: TextInputType.phone,
-                                    maxLength: 10,
+                                    keyboardType: TextInputType.text,
                                     decoration: const InputDecoration(
-                                      labelText: 'Mobile Number *',
-                                      counterText: '',
+                                      labelText: 'Mobile Number',
                                       prefixIcon: Icon(Icons.phone_outlined),
                                     ),
-                                    validator: (v) {
-                                      if (v == null || !RegExp(r'^\d{10}$').hasMatch(v)) {
-                                        return '10 digit mobile';
-                                      }
-                                      return null;
-                                    },
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: TextFormField(
                                     controller: _alt,
-                                    keyboardType: TextInputType.phone,
-                                    maxLength: 10,
+                                    keyboardType: TextInputType.text,
                                     decoration: const InputDecoration(
                                       labelText: 'Alternate Number',
-                                      counterText: '',
                                     ),
-                                    validator: (v) {
-                                      if (v == null || v.isEmpty) return null;
-                                      if (!RegExp(r'^\d{10}$').hasMatch(v)) {
-                                        return '10 digit';
-                                      }
-                                      return null;
-                                    },
                                   ),
                                 ),
                               ],
@@ -275,12 +255,9 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                               controller: _sim,
                               onChanged: (_) => setState(() {}),
                               decoration: const InputDecoration(
-                                labelText: 'SIM No. *',
+                                labelText: 'SIM No.',
                                 prefixIcon: Icon(Icons.sim_card_outlined),
                               ),
-                              validator: (v) => (v == null || v.trim().length < 6)
-                                  ? 'SIM number likho'
-                                  : null,
                             ),
                             const SizedBox(height: 12),
                             Row(

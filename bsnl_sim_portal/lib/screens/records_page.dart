@@ -486,8 +486,8 @@ class _RecordFormPageState extends State<RecordFormPage> {
           children: [
             Text(
               adding
-                  ? 'Jagah choose karo — ye entry sirf usi location ke portal mein save hogi.'
-                  : 'Is entry ko update karo.',
+                  ? 'Koi field required nahi. Text, dash (-) aur decimal / minus amount bhi chalega.'
+                  : 'Koi field required nahi. Jo chaho update karo.',
               style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),

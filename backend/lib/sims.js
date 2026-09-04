@@ -53,12 +53,7 @@ function pickBody(body) {
   };
 }
 
-function validate(row) {
-  if (!row.name) return 'Naam likho';
-  if (!/^\d{10}$/.test(row.mobile)) return '10 digit mobile';
-  if (row.alt && !/^\d{10}$/.test(row.alt)) return 'Alternate number 10 digit';
-  if (row.sim.length < 6) return 'SIM number likho';
-  if (row.frc && !/^[0-5]$/.test(row.frc)) return 'FRC 0, 1, 2, 3, 4 ya 5';
+function validate(_row) {
   return null;
 }
 
@@ -86,15 +81,20 @@ async function addSim(db, body, meta) {
   const err = validate(row);
   if (err) return { status: 400, json: { ok: false, error: err } };
   const locId = Number(meta.locationId);
-  const dup = await db.collection('sims').findOne(withAlive({
-    locationId: locId,
-    $or: [{ mobile: row.mobile }, { sim: row.sim }],
-  }));
-  if (dup && body?.force !== true) {
-    return {
-      status: 409,
-      json: { ok: false, error: 'Is location mein ye mobile/SIM pehle se hai', duplicate: true },
-    };
+  const dupOr = [];
+  if (row.mobile) dupOr.push({ mobile: row.mobile });
+  if (row.sim) dupOr.push({ sim: row.sim });
+  if (dupOr.length && body?.force !== true) {
+    const dup = await db.collection('sims').findOne(withAlive({
+      locationId: locId,
+      $or: dupOr,
+    }));
+    if (dup) {
+      return {
+        status: 409,
+        json: { ok: false, error: 'Is location mein ye mobile/SIM pehle se hai', duplicate: true },
+      };
+    }
   }
   if (!row.sno) {
     const q = { locationId: Number(meta.locationId) };
@@ -114,10 +114,6 @@ async function addSim(db, body, meta) {
     updatedAt: now,
   };
   await db.collection('sims').insertOne(saved);
-  await db.collection('stock').updateOne(
-    { locationId: Number(meta.locationId), qty: { $gt: 0 } },
-    { $inc: { qty: -1 }, $set: { updatedAt: now } },
-  );
   await logActivity(db, {
     email: meta.email,
     role: meta.role,

@@ -47,17 +47,41 @@ class _NotificationsPageState extends State<NotificationsPage> {
       children: [
         const Text('Notifications', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
         const SizedBox(height: 6),
-        const Text('Only items that need attention.', style: TextStyle(color: BsnlColors.muted)),
+        const Text('Kaun bheja, kyu aayi, kab aur kis location par — yeh yahan dikhega.', style: TextStyle(color: BsnlColors.muted)),
         const SizedBox(height: 16),
         for (final r in _rows)
           Card(
-            margin: const EdgeInsets.only(bottom: 8),
+            margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
-              leading: Icon(
-                '${r['tone']}' == 'danger' ? Icons.error_outline : Icons.info_outline,
-                color: '${r['tone']}' == 'danger' ? BsnlColors.saffron : BsnlColors.navy,
+              isThreeLine: true,
+              leading: CircleAvatar(
+                backgroundColor: '${r['tone']}' == 'danger'
+                    ? const Color(0xFFFECACA)
+                    : '${r['tone']}' == 'warn'
+                        ? const Color(0xFFFEF3C7)
+                        : const Color(0xFFDBEAFE),
+                child: Icon(
+                  '${r['tone']}' == 'danger'
+                      ? Icons.error_outline
+                      : '${r['tone']}' == 'warn'
+                          ? Icons.warning_amber_outlined
+                          : Icons.notifications_outlined,
+                  color: '${r['tone']}' == 'danger'
+                      ? const Color(0xFFB91C1C)
+                      : '${r['tone']}' == 'warn'
+                          ? const Color(0xFFB45309)
+                          : BsnlColors.navy,
+                ),
               ),
               title: Text('${r['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text(
+                [
+                  'From: ${r['from'] ?? 'Unknown'}',
+                  if ('${r['reason'] ?? ''}'.trim().isNotEmpty) 'Why: ${r['reason']}',
+                  if ('${r['locationName'] ?? ''}'.trim().isNotEmpty) 'Location: ${r['locationName']}',
+                  if ('${r['at'] ?? ''}'.trim().isNotEmpty) 'When: ${r['at']}',
+                ].join('\n'),
+              ),
             ),
           ),
       ],

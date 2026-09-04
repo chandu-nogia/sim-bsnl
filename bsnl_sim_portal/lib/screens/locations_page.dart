@@ -129,9 +129,17 @@ class _LocationsPageState extends State<LocationsPage> {
                         final off = '${row['status']}' == 'inactive';
                         return Card(
                           margin: const EdgeInsets.only(bottom: 10),
+                          clipBehavior: Clip.antiAlias,
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: off ? Colors.grey : BsnlColors.navy,
+                              backgroundColor: off
+                                  ? Colors.grey
+                                  : [
+                                      const Color(0xFF0B3D91),
+                                      const Color(0xFF0E7490),
+                                      const Color(0xFF7C3AED),
+                                      const Color(0xFFEA580C),
+                                    ][i % 4],
                               foregroundColor: Colors.white,
                               child: Text(
                                 () {

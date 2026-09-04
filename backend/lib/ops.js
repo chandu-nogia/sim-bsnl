@@ -3,33 +3,112 @@
 const { assignedIds } = require('./rbac');
 const { withAlive } = require('./alive');
 
-async function listNotifications(db, user) {
+function locFilter(user) {
   const ids = assignedIds(user);
-  const locQ = ids === null ? {} : { locationId: { $in: ids.length ? ids : [-1] } };
-  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  const [pendingTop, failedTop, pendingClose, lowStock, failLogins] = await Promise.all([
-    db.collection('ctopup').countDocuments(withAlive({ ...locQ, status: 'Pending' })),
-    db.collection('ctopup').countDocuments(withAlive({ ...locQ, status: 'Failed' })),
-    db.collection('closing').countDocuments({ ...locQ, status: 'pending' }),
-    db.collection('stock').find(locQ).toArray(),
-    db.collection('activity').countDocuments({
-      action: 'login-fail',
-      at: { $gte: since },
-      ...(ids === null ? {} : { locationId: { $in: ids.length ? ids : [-1] } }),
-    }),
+  if (ids === null) return {};
+  return { locationId: { $in: ids.length ? ids : [-1] } };
+}
+
+function note({ id, tone, title, from, reason, at, locationName, section }) {
+  return {
+    id,
+    tone,
+    title,
+    from: from || 'System',
+    reason: reason || '',
+    at: at || '',
+    locationName: locationName || '',
+    section: section || '',
+  };
+}
+
+function who(row) {
+  return row.name || row.email || row.createdBy || 'Unknown';
+}
+
+function whyActivity(row) {
+  if (row.detail) return row.detail;
+  const act = row.action || 'action';
+  const sec = row.section || 'record';
+  return `${who(row)} ${act} on ${sec}`;
+}
+
+async function listNotifications(db, user) {
+  const locQ = locFilter(user);
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const actQ = { at: { $gte: since }, action: { $ne: 'login' } };
+  if (locQ.locationId) actQ.locationId = locQ.locationId;
+
+  const [activity, pendingTop, failedTop, users] = await Promise.all([
+    db.collection('activity').find(actQ).sort({ id: -1 }).limit(40).toArray(),
+    db.collection('ctopup').find(withAlive({ ...locQ, status: 'Pending' })).sort({ id: -1 }).limit(15).toArray(),
+    db.collection('ctopup').find(withAlive({ ...locQ, status: 'Failed' })).sort({ id: -1 }).limit(15).toArray(),
+    db.collection('users').find({}, { projection: { email: 1, name: 1 } }).toArray(),
   ]);
+  const names = {};
+  for (const u of users) names[String(u.email || '').toLowerCase()] = u.name || u.email;
+
   const rows = [];
-  if (pendingTop) rows.push({ id: 'pending-top', tone: 'warn', title: `${pendingTop} C-TopUp pending`, section: 'ctopup' });
-  if (failedTop) rows.push({ id: 'failed-top', tone: 'danger', title: `${failedTop} C-TopUp failed`, section: 'ctopup' });
-  if (pendingClose) rows.push({ id: 'pending-close', tone: 'warn', title: `${pendingClose} daily closing pending review`, section: 'closing' });
-  const low = lowStock.filter((s) => Number(s.qty || 0) <= Number(s.lowAt || 20));
-  if (low.length) rows.push({ id: 'low-stock', tone: 'warn', title: `Low SIM stock at ${low.length} location(s)`, section: 'stock' });
-  if (failLogins) rows.push({ id: 'login-fail', tone: 'danger', title: `${failLogins} failed logins (48h)`, section: 'activity' });
-  if (user.role === 'admin') {
-    const resets = await db.collection('activity').countDocuments({ section: 'auth', detail: { $regex: 'requested password reset', $options: 'i' }, at: { $gte: since } });
-    if (resets) rows.push({ id: 'pw-reset', tone: 'info', title: `${resets} password reset request(s)`, section: 'employees' });
+  const seen = new Set();
+
+  function push(item) {
+    if (!item.id || seen.has(item.id)) return;
+    seen.add(item.id);
+    rows.push(item);
   }
-  return { status: 200, json: { ok: true, rows, total: rows.length } };
+
+  for (const r of pendingTop) {
+    const email = String(r.createdBy || '').toLowerCase();
+    push(note({
+      id: `pending-${r.id}`,
+      tone: 'warn',
+      title: 'C-TopUp pending',
+      from: names[email] || r.createdBy || 'Unknown',
+      reason: `${r.name || r.number || `Record #${r.id}`} ka payment pending hai${r.amount ? ` (₹${r.amount})` : ''}${r.locationName ? ` — ${r.locationName}` : ''}`,
+      at: r.updatedAt || r.createdAt || '',
+      locationName: r.locationName || '',
+      section: 'ctopup',
+    }));
+  }
+  for (const r of failedTop) {
+    const email = String(r.createdBy || '').toLowerCase();
+    push(note({
+      id: `failed-${r.id}`,
+      tone: 'danger',
+      title: 'C-TopUp failed',
+      from: names[email] || r.createdBy || 'Unknown',
+      reason: `${r.name || r.number || `Record #${r.id}`} ka payment fail hua${r.amount ? ` (₹${r.amount})` : ''}${r.note ? ` — ${r.note}` : ''}${r.locationName ? ` — ${r.locationName}` : ''}`,
+      at: r.updatedAt || r.createdAt || '',
+      locationName: r.locationName || '',
+      section: 'ctopup',
+    }));
+  }
+  for (const r of activity) {
+    const action = String(r.action || '');
+    const tone = action === 'login-fail' || action === 'delete' ? 'danger'
+      : action.includes('fail') || /password reset/i.test(String(r.detail || '')) ? 'warn'
+        : 'info';
+    const title = action === 'login-fail' ? 'Failed login'
+      : /password reset/i.test(String(r.detail || '')) ? 'Password reset request'
+        : action === 'delete' ? 'Record deleted'
+          : action === 'add' ? 'New record'
+            : action === 'update' ? 'Record updated'
+              : action === 'restore' ? 'Record restored'
+                : (r.section || 'Activity');
+    push(note({
+      id: `act-${r.id}`,
+      tone,
+      title,
+      from: who(r),
+      reason: whyActivity(r),
+      at: r.at || '',
+      locationName: r.locationName || '',
+      section: r.section === 'auth' ? (action === 'login-fail' ? 'activity' : 'employees') : (r.section || 'activity'),
+    }));
+  }
+
+  rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return { status: 200, json: { ok: true, rows: rows.slice(0, 50), total: rows.length } };
 }
 
 async function systemHealth(db) {
@@ -50,7 +129,7 @@ async function systemHealth(db) {
       ok: true,
       mongo: 'connected',
       pingMs,
-      version: 'locations-7',
+      version: 'locations-8',
       counts: { users, locations, sims, cbc, ctopup },
       lastActivity: activity[0]?.at || '',
     },

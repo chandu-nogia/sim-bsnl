@@ -22,9 +22,9 @@ class CbcPage extends StatelessWidget {
       fields: const [
         RecordField('date', 'Date', kind: RecordFieldKind.date),
         RecordField('name', 'Name'),
-        RecordField('mobile', 'Mobile Number', keyboard: TextInputType.phone),
-        RecordField('landline', 'Landline No.', keyboard: TextInputType.phone),
-        RecordField('amount', 'Amount', keyboard: TextInputType.number),
+        RecordField('mobile', 'Mobile Number'),
+        RecordField('landline', 'Landline No.'),
+        RecordField('amount', 'Amount'),
         RecordField('transactionId', 'Transaction ID'),
         RecordField('note', 'Note'),
       ],

@@ -8,11 +8,13 @@ class SimpleBarChart extends StatelessWidget {
     required this.title,
     required this.points,
     this.height = 180,
+    this.colors = const [Color(0xFF0B3D91), Color(0xFF1A73E8)],
   });
 
   final String title;
   final List<({String label, num value})> points;
   final double height;
+  final List<Color> colors;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +25,7 @@ class SimpleBarChart extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            Text(title, style: TextStyle(fontWeight: FontWeight.w800, color: colors.first)),
             const SizedBox(height: 12),
             if (points.isEmpty)
               const Padding(
@@ -51,10 +53,10 @@ class SimpleBarChart extends StatelessWidget {
                                     child: DecoratedBox(
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
-                                        gradient: const LinearGradient(
+                                        gradient: LinearGradient(
                                           begin: Alignment.bottomCenter,
                                           end: Alignment.topCenter,
-                                          colors: [Color(0xFF0B3D91), Color(0xFF1A73E8)],
+                                          colors: colors,
                                         ),
                                       ),
                                     ),

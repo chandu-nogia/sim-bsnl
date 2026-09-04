@@ -7,9 +7,9 @@ class BsnlColors {
   static const royal = Color(0xFF1557C0);
   static const ink = Color(0xFF0F172A);
   static const muted = Color(0xFF5B6573);
-  static const page = Color(0xFFF6F3EC);
+  static const page = Color(0xFFF3F0FF);
   static const paper = Color(0xFFFFFDF8);
-  static const line = Color(0xFFE6E0D4);
+  static const line = Color(0xFFE0D7F5);
   static const cymn = Color(0xFFD6E8FF);
   static const mnp = Color(0xFFFFE4C4);
   static const swap = Color(0xFFE8D5F2);
@@ -93,5 +93,15 @@ ThemeData buildBsnlTheme() {
 }
 
 BoxDecoration bsnlPageGradient() {
-  return const BoxDecoration(color: BsnlColors.page);
+  return const BoxDecoration(
+    gradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        Color(0xFFF7F3FF),
+        Color(0xFFE8F4FF),
+        Color(0xFFFFF3E8),
+      ],
+    ),
+  );
 }

@@ -13,10 +13,8 @@ import '../screens/profile_page.dart';
 import '../screens/recycle_page.dart';
 import '../screens/reports_page.dart';
 import '../screens/settings_page.dart';
-import '../screens/shop_page.dart';
 import '../state/auth_store.dart';
 import '../state/sim_store.dart';
-import '../util/format.dart';
 import '../widgets/global_search.dart';
 
 class _NavItem {
@@ -65,8 +63,6 @@ class _AppShellState extends State<AppShell> {
       _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
       _NavItem('cbc', 'CBC List', Icons.receipt_long_outlined),
       _NavItem('ctopup', 'C-TopUp', Icons.payments_outlined),
-      _NavItem('stock', 'SIM Stock', Icons.inventory_2_outlined),
-      _NavItem('closing', 'Daily Closing', Icons.event_available_outlined),
       _NavItem('activity', 'My Activity', Icons.history),
       _NavItem('notifications', 'Notifications', Icons.notifications_outlined),
       _NavItem('recycle', 'Recycle Bin', Icons.delete_outline),
@@ -127,29 +123,6 @@ class _AppShellState extends State<AppShell> {
     _go(section);
   }
 
-  Widget _pickLocationFirst() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'Pehle jagah choose karo. Har jagah ka BSNL Portal / CBC / C-TopUp alag table hai.',
-          style: TextStyle(fontWeight: FontWeight.w700, color: BsnlColors.navyDark),
-        ),
-        const SizedBox(height: 12),
-        for (final r in _locations)
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.place_outlined, color: BsnlColors.navy),
-              title: Text('${r['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: const Text('Is jagah ka data alag table mein khulega'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _openLocation(asInt(r['id']) ?? 0, '${r['name'] ?? ''}', _section),
-            ),
-          ),
-      ],
-    );
-  }
-
   Widget _body() {
     switch (_section) {
       case 'locations':
@@ -166,12 +139,6 @@ class _AppShellState extends State<AppShell> {
         return ProfilePage(auth: auth);
       case 'recycle':
         return RecyclePage(auth: auth);
-      case 'stock':
-        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
-        return StockPage(key: ValueKey('stock-$_locId'), auth: auth);
-      case 'closing':
-        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
-        return ClosingPage(key: ValueKey('close-$_locId'), auth: auth);
       case 'notifications':
         return NotificationsPage(auth: auth);
       case 'health':
@@ -291,7 +258,16 @@ class _AppShellState extends State<AppShell> {
         ],
       ],
     );
-    return ColoredBox(color: BsnlColors.navyDark, child: nav);
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF071A44), Color(0xFF0B3D91), Color(0xFF0E7490)],
+        ),
+      ),
+      child: nav,
+    );
   }
 
   @override
@@ -349,8 +325,8 @@ class _AppShellState extends State<AppShell> {
           ],
         );
 
-        final content = ColoredBox(
-          color: BsnlColors.page,
+        final content = DecoratedBox(
+          decoration: bsnlPageGradient(),
           child: _body(),
         );
 

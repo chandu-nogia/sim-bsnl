@@ -43,13 +43,7 @@ function pickCbc(body) {
   };
 }
 
-function validateCbc(row) {
-  if (!row.date) return 'Date choose karo';
-  if (!row.name) return 'Naam likho';
-  if (!/^\d{10}$/.test(row.mobile)) return '10 digit mobile';
-  if (row.landline && !/^\d{6,15}$/.test(row.landline)) return 'Landline number galat';
-  if (!row.amount) return 'Amount likho';
-  if (!row.transactionId) return 'Transaction ID likho';
+function validateCbc(_row) {
   return null;
 }
 
@@ -89,11 +83,7 @@ function pickCtopup(body) {
   };
 }
 
-function validateCtopup(row) {
-  if (!row.date) return 'Date choose karo';
-  if (!row.name) return 'Naam likho';
-  if (!/^\d{10}$/.test(row.number)) return '10 digit number';
-  if (!row.amount) return 'Amount likho';
+function validateCtopup(_row) {
   return null;
 }
 

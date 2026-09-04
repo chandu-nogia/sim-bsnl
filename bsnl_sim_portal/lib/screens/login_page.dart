@@ -129,7 +129,11 @@ class _LoginPageState extends State<LoginPage> {
       width: wide ? 420 : double.infinity,
       padding: const EdgeInsets.all(36),
       decoration: const BoxDecoration(
-        color: BsnlColors.navyDark,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF071A44), Color(0xFF0B3D91), Color(0xFF7C3AED)],
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -164,8 +168,8 @@ class _LoginPageState extends State<LoginPage> {
               children: [
                 brand,
                 Expanded(
-                  child: ColoredBox(
-                    color: BsnlColors.page,
+                  child: DecoratedBox(
+                    decoration: bsnlPageGradient(),
                     child: Center(child: Padding(padding: const EdgeInsets.all(24), child: form)),
                   ),
                 ),
