@@ -53,9 +53,12 @@ function corsOrigin(origin, cb) {
 }
 app.use(cors({
   origin: corsOrigin,
-  allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Location-Id', 'Accept'],
 }));
-app.options('*', cors({ origin: corsOrigin, allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.options('*', cors({
+  origin: corsOrigin,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Location-Id', 'Accept'],
+}));
 app.use(express.json({ limit: '2mb' }));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -105,7 +108,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-2' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-3' });
 });
 
 app.get('/api/health', async (_req, res) => {

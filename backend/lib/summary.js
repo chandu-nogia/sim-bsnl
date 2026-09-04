@@ -320,22 +320,198 @@ async function ownerDashboard(db) {
   const loc = await khatuLocation(db);
   const locQ = loc ? khatuQuery(loc) : { locationId: 1 };
   const alive = withAlive(locQ);
-  const today = isoDay();
-  const [sims, cbcCount, ctopupCount, todaySims, todayCbc, todayTop, activity] = await Promise.all([
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const monthStart = startOfMonth();
+
+  function dayKeys(d) {
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    const yy = String(y).slice(-2);
+    const mm = String(m).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return [...new Set([
+      `${y}-${mm}-${dd}`,
+      `${dd}/${mm}/${y}`,
+      `${day}/${m}/${y}`,
+      `${dd}/${mm}/${yy}`,
+      `${day}/${m}/${yy}`,
+      `${dd}/${m}/${y}`,
+      `${day}/${mm}/${y}`,
+    ])];
+  }
+
+  function rangeQuery(fromDate) {
+    const keys = [];
+    const cursor = new Date(fromDate);
+    const end = new Date(todayStart);
+    end.setDate(end.getDate() + 1);
+    while (cursor < end) {
+      keys.push(...dayKeys(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return {
+      $or: [
+        { createdAt: { $gte: fromDate.toISOString() } },
+        { date: { $in: keys } },
+      ],
+    };
+  }
+
+  async function moneyGroup(collection, extra) {
+    const match = extra ? { $and: [locQ, extra] } : locQ;
+    const rows = await db.collection(collection).aggregate([
+      { $match: withAlive(match) },
+      {
+        $group: {
+          _id: null,
+          n: { $sum: 1 },
+          amount: { $sum: amountExpr() },
+        },
+      },
+    ]).toArray();
+    const r = rows[0] || {};
+    return { n: r.n || 0, amount: Math.round((r.amount || 0) * 100) / 100 };
+  }
+
+  const todayQ = rangeQuery(todayStart);
+  const weekQ = rangeQuery(weekStart);
+  const monthQ = rangeQuery(monthStart);
+
+  const [
+    sims,
+    cbcAll,
+    topAll,
+    todaySims,
+    todayCbc,
+    todayTop,
+    weekSims,
+    weekCbc,
+    weekTop,
+    monthSims,
+    monthCbc,
+    monthTop,
+    typeRows,
+    statusRows,
+    activity,
+  ] = await Promise.all([
     db.collection('sims').countDocuments(alive),
-    db.collection('cbc').countDocuments(alive),
-    db.collection('ctopup').countDocuments(alive),
-    db.collection('sims').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
-    db.collection('cbc').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
-    db.collection('ctopup').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
-    db.collection('activity').find({ locationId: Number(loc?.id) || 1 }).sort({ id: -1 }).limit(10).toArray(),
+    moneyGroup('cbc'),
+    moneyGroup('ctopup'),
+    db.collection('sims').countDocuments(withAlive({ $and: [locQ, todayQ] })),
+    moneyGroup('cbc', todayQ),
+    moneyGroup('ctopup', todayQ),
+    db.collection('sims').countDocuments(withAlive({ $and: [locQ, weekQ] })),
+    moneyGroup('cbc', weekQ),
+    moneyGroup('ctopup', weekQ),
+    db.collection('sims').countDocuments(withAlive({ $and: [locQ, monthQ] })),
+    moneyGroup('cbc', monthQ),
+    moneyGroup('ctopup', monthQ),
+    db.collection('sims').aggregate([
+      { $match: alive },
+      { $group: { _id: { $ifNull: ['$type', 'CYMN'] }, n: { $sum: 1 } } },
+    ]).toArray(),
+    db.collection('ctopup').aggregate([
+      { $match: alive },
+      { $group: { _id: { $ifNull: ['$status', 'Pending'] }, n: { $sum: 1 }, amount: { $sum: amountExpr() } } },
+    ]).toArray(),
+    db.collection('activity').find({ locationId: Number(loc?.id) || 1 }).sort({ id: -1 }).limit(12).toArray(),
   ]);
+
+  const daily = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date(todayStart);
+    d.setDate(d.getDate() - i);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    const q = {
+      $or: [
+        { createdAt: { $gte: d.toISOString(), $lt: next.toISOString() } },
+        { date: { $in: dayKeys(d) } },
+      ],
+    };
+    const [s, c, t] = await Promise.all([
+      db.collection('sims').countDocuments(withAlive({ $and: [locQ, q] })),
+      moneyGroup('cbc', q),
+      moneyGroup('ctopup', q),
+    ]);
+    daily.push({
+      date: isoDay(d),
+      label: `${d.getDate()}/${d.getMonth() + 1}`,
+      sims: s,
+      cbc: c.n,
+      ctopup: t.n,
+      cbcAmount: c.amount,
+      ctopupAmount: t.amount,
+      amount: Math.round((c.amount + t.amount) * 100) / 100,
+    });
+  }
+
+  const portalTypes = { CYMN: 0, MNP: 0, Swap: 0, Postpaid: 0 };
+  for (const r of typeRows) {
+    const key = String(r._id || 'CYMN');
+    portalTypes[key] = r.n;
+  }
+  const ctopupStatus = {};
+  for (const r of statusRows) {
+    ctopupStatus[String(r._id || 'Pending')] = {
+      n: r.n || 0,
+      amount: Math.round((r.amount || 0) * 100) / 100,
+    };
+  }
+
+  const paid = ctopupStatus.Paid || ctopupStatus.paid || { n: 0, amount: 0 };
+  const pending = ctopupStatus.Pending || ctopupStatus.pending || { n: 0, amount: 0 };
+  const failed = ctopupStatus.Failed || ctopupStatus.failed || { n: 0, amount: 0 };
+
   return {
     locationName: loc?.name || LOCATION_NAME,
+    generatedAt: now.toISOString(),
     sims,
-    cbc: cbcCount,
-    ctopup: ctopupCount,
-    today: { sims: todaySims, cbc: todayCbc, ctopup: todayTop },
+    cbc: cbcAll.n,
+    ctopup: topAll.n,
+    totals: {
+      records: sims + cbcAll.n + topAll.n,
+      cbcAmount: cbcAll.amount,
+      ctopupAmount: topAll.amount,
+      combinedAmount: Math.round((cbcAll.amount + topAll.amount) * 100) / 100,
+      avgCbc: cbcAll.n ? Math.round((cbcAll.amount / cbcAll.n) * 100) / 100 : 0,
+      avgCtopup: topAll.n ? Math.round((topAll.amount / topAll.n) * 100) / 100 : 0,
+    },
+    today: {
+      sims: todaySims,
+      cbc: todayCbc.n,
+      ctopup: todayTop.n,
+      cbcAmount: todayCbc.amount,
+      ctopupAmount: todayTop.amount,
+      combinedAmount: Math.round((todayCbc.amount + todayTop.amount) * 100) / 100,
+    },
+    week: {
+      sims: weekSims,
+      cbc: weekCbc.n,
+      ctopup: weekTop.n,
+      cbcAmount: weekCbc.amount,
+      ctopupAmount: weekTop.amount,
+      combinedAmount: Math.round((weekCbc.amount + weekTop.amount) * 100) / 100,
+    },
+    month: {
+      sims: monthSims,
+      cbc: monthCbc.n,
+      ctopup: monthTop.n,
+      cbcAmount: monthCbc.amount,
+      ctopupAmount: monthTop.amount,
+      combinedAmount: Math.round((monthCbc.amount + monthTop.amount) * 100) / 100,
+    },
+    portalTypes,
+    ctopupStatus: {
+      Paid: paid,
+      Pending: pending,
+      Failed: failed,
+    },
+    daily,
     activity: activity.map((a) => ({
       at: a.at || '',
       name: a.name || a.email || '',

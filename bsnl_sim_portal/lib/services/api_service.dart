@@ -42,7 +42,7 @@ class LoginResult {
 }
 
 class ApiService {
-  static const _timeout = Duration(seconds: 20);
+  static const _timeout = Duration(seconds: 45);
   String? Function()? tokenGetter;
   int? Function()? locationIdGetter;
 
@@ -94,7 +94,7 @@ class ApiService {
       rethrow;
     } catch (e) {
       throw ApiException(
-        'Server nahi mila. Terminal: cd backend && npm start\n($e)',
+        'Server se connect nahi ho paya. Internet check karo, 10 second baad Retry dabao.',
       );
     }
   }

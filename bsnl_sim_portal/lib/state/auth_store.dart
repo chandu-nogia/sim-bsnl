@@ -26,13 +26,19 @@ class AuthStore extends ChangeNotifier {
   int? get effectiveLocationId => locationId;
 
   String get apiBase {
+    const live = 'https://bsnl-sim-api.onrender.com';
+    const defined = String.fromEnvironment('API_URL');
+    if (kReleaseMode) {
+      if (defined.trim().isNotEmpty) {
+        return defined.trim().replaceAll(RegExp(r'/+$'), '');
+      }
+      return live;
+    }
     final saved = (apiUrl ?? '').trim().replaceAll(RegExp(r'/+$'), '');
     if (saved.isNotEmpty) return saved;
-    const defined = String.fromEnvironment('API_URL');
     if (defined.trim().isNotEmpty) {
       return defined.trim().replaceAll(RegExp(r'/+$'), '');
     }
-    if (kReleaseMode) return 'https://bsnl-sim-api.onrender.com';
     return 'http://localhost:5050';
   }
 
@@ -41,6 +47,10 @@ class AuthStore extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     apiUrl = prefs.getString('apiUrl');
+    if (kReleaseMode) {
+      apiUrl = null;
+      await prefs.remove('apiUrl');
+    }
     token = prefs.getString('authToken');
     email = prefs.getString('authEmail');
     name = prefs.getString('authName') ?? '';
