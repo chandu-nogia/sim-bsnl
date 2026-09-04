@@ -15,11 +15,20 @@ class ApiException implements Exception {
 }
 
 class PagedRows {
-  PagedRows({required this.rows, required this.total, this.page = 1, this.limit = 50});
+  PagedRows({
+    required this.rows,
+    required this.total,
+    this.page = 1,
+    this.limit = 50,
+    this.walletAmount = 0,
+    this.remainingBalance = 0,
+  });
   final List<Map<String, dynamic>> rows;
   final int total;
   final int page;
   final int limit;
+  final num walletAmount;
+  final num remainingBalance;
 }
 
 class LoginResult {
@@ -103,6 +112,11 @@ class ApiService {
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse('$v');
+  }
+
+  num _num(dynamic v) {
+    if (v is num) return v;
+    return num.tryParse('$v') ?? 0;
   }
 
   List<int> _ints(dynamic v) {
@@ -203,6 +217,8 @@ class ApiService {
       total: _int(json['total']) ?? rows.length,
       page: _int(json['page']) ?? (page ?? 1),
       limit: _int(json['limit']) ?? (limit ?? rows.length),
+      walletAmount: _num(json['walletAmount']),
+      remainingBalance: _num(json['remainingBalance']),
     );
   }
 
@@ -330,6 +346,18 @@ class ApiService {
   Future<Map<String, dynamic>> dashboard(String base) async {
     final json = await _send(http.get(_uri(base, '/api/dashboard'), headers: _headers()));
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Dashboard fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> saveWallet(String base, String amount) async {
+    final json = await _send(
+      http.put(
+        _uri(base, '/api/wallet'),
+        headers: _headers(),
+        body: jsonEncode({'amount': amount}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Wallet save fail'}');
     return json;
   }
 

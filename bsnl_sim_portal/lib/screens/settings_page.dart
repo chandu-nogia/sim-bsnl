@@ -18,6 +18,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _current = TextEditingController();
   final _next = TextEditingController();
   late final TextEditingController _url;
+  final _wallet = TextEditingController();
   bool _busy = false;
 
   @override
@@ -25,6 +26,19 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _name = TextEditingController(text: widget.store.auth.name);
     _url = TextEditingController(text: widget.store.auth.apiUrl ?? widget.store.apiBase);
+    _loadWallet();
+  }
+
+  Future<void> _loadWallet() async {
+    try {
+      final json = await widget.store.auth.api.dashboard(widget.store.auth.apiBase);
+      final totals = json['totals'];
+      if (totals is Map && mounted) {
+        final w = totals['walletAmount'];
+        _wallet.text = '${w ?? ''}';
+        if (_wallet.text == '0') _wallet.text = '';
+      }
+    } catch (_) {}
   }
 
   @override
@@ -33,6 +47,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _current.dispose();
     _next.dispose();
     _url.dispose();
+    _wallet.dispose();
     super.dispose();
   }
 
@@ -44,6 +59,20 @@ class _SettingsPageState extends State<SettingsPage> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name saved')));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveWallet() async {
+    setState(() => _busy = true);
+    try {
+      await widget.store.auth.api.saveWallet(widget.store.auth.apiBase, _wallet.text.trim());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wallet saved')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -88,6 +117,34 @@ class _SettingsPageState extends State<SettingsPage> {
                 TextField(controller: _name, decoration: const InputDecoration(labelText: 'Display name')),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _busy ? null : _saveName, child: const Text('Save name')),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Balance (Total Amount)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                const SizedBox(height: 8),
+                const Text(
+                  'CBP aur CTOPUP amount se ye balance kam hoga, commission add hoga.',
+                  style: TextStyle(color: BsnlColors.muted),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _wallet,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Total amount (wallet)', prefixText: '₹ '),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _busy ? null : _saveWallet,
+                  child: const Text('Save wallet'),
+                ),
               ],
             ),
           ),

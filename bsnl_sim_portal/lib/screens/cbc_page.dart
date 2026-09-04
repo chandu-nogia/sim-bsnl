@@ -14,8 +14,8 @@ class CbcPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return RecordsPage(
       auth: auth,
-      title: 'CBC List',
-      path: '/api/cbc',
+      title: 'CBP List',
+      path: '/api/cbp',
       locationId: locationId,
       locationName: locationName,
       nested: nested,
@@ -26,7 +26,7 @@ class CbcPage extends StatelessWidget {
         RecordField('landline', 'Landline No.'),
         RecordField('amount', 'Amount', keyboard: TextInputType.numberWithOptions(decimal: true)),
         RecordField('commission', 'Commission', keyboard: TextInputType.numberWithOptions(decimal: true)),
-        RecordField('balance', 'Balance', keyboard: TextInputType.numberWithOptions(decimal: true)),
+        RecordField('balance', 'Balance', kind: RecordFieldKind.computed),
         RecordField('transactionId', 'Transaction ID'),
         RecordField('note', 'Note'),
       ],

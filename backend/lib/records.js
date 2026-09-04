@@ -7,6 +7,7 @@ const { locationMatchQuery } = require('./location_resolve');
 const { withAlive } = require('./alive');
 const { dateKeyOf, applyDateRange, sortSpec } = require('./dates');
 const { moneyNumber } = require('./password');
+const { recomputeBalances, snapshot } = require('./wallet');
 
 function moneyFields(b) {
   const amount = String(b.amount ?? '').trim();
@@ -132,7 +133,15 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const col = db.collection(collection);
       const total = await col.countDocuments(q);
       const rows = await col.find(q).sort(sortSpec(scope)).skip(skip).limit(limit).toArray();
-      return { rows: rows.map(toPublic), total, page, limit };
+      const snap = await snapshot(db);
+      return {
+        rows: rows.map(toPublic),
+        total,
+        page,
+        limit,
+        walletAmount: snap.walletAmount,
+        remainingBalance: snap.remainingBalance,
+      };
     },
     async add(db, body, meta) {
       const row = pick(body);
@@ -172,9 +181,11 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         section,
         locationId: saved.locationId,
         locationName: saved.locationName,
-        detail: `${actorLabel(meta)} added ${section === 'ctopup' ? 'C-TopUp transaction' : 'CBC record'}${moneyBit} in ${saved.locationName}`,
+        detail: `${actorLabel(meta)} added ${section === 'ctopup' ? 'C-TopUp transaction' : 'CBP record'}${moneyBit} in ${saved.locationName}`,
       });
-      return { status: 200, json: { ok: true, row: toPublic(saved) } };
+      await recomputeBalances(db);
+      const fresh = await db.collection(collection).findOne({ id });
+      return { status: 200, json: { ok: true, row: toPublic(fresh || saved) } };
     },
     async update(db, idRaw, body, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
@@ -207,9 +218,11 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         section,
         locationId: saved.locationId,
         locationName: saved.locationName,
-        detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBC'} record in ${saved.locationName}`,
+        detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} record in ${saved.locationName}`,
       });
-      return { status: 200, json: { ok: true, row: toPublic(saved) } };
+      await recomputeBalances(db);
+      const fresh = await db.collection(collection).findOne({ id });
+      return { status: 200, json: { ok: true, row: toPublic(fresh || saved) } };
     },
     async remove(db, idRaw, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
@@ -232,8 +245,9 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         section,
         locationId: existing.locationId,
         locationName: existing.locationName || '',
-        detail: `${actorLabel(meta)} deleted ${section === 'ctopup' ? 'C-TopUp' : 'CBC'} record in ${existing.locationName || ''}`,
+        detail: `${actorLabel(meta)} deleted ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} record in ${existing.locationName || ''}`,
       });
+      await recomputeBalances(db);
       return { status: 200, json: { ok: true } };
     },
   };

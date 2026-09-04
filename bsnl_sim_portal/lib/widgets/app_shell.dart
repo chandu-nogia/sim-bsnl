@@ -34,7 +34,7 @@ class _AppShellState extends State<AppShell> {
   static const _items = [
     _NavItem('dashboard', 'Dashboard', Icons.dashboard_outlined),
     _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
-    _NavItem('cbc', 'CBC List', Icons.receipt_long_outlined),
+    _NavItem('cbc', 'CBP List', Icons.receipt_long_outlined),
     _NavItem('ctopup', 'CTOPUP', Icons.payments_outlined),
     _NavItem('settings', 'Settings', Icons.settings_outlined),
   ];

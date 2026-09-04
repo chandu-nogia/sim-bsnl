@@ -95,7 +95,7 @@ class _PortalSearch extends SearchDelegate<void> {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Text(
-          'Type at least 2 characters. Search Portal, CBC, CTOPUP.',
+          'Type at least 2 characters. Search Portal, CBP, CTOPUP.',
           style: TextStyle(color: BsnlColors.muted),
         ),
       );
@@ -105,7 +105,7 @@ class _PortalSearch extends SearchDelegate<void> {
     }
     const sections = [
       ('sims', 'BSNL Portal'),
-      ('cbc', 'CBC List'),
+      ('cbc', 'CBP List'),
       ('ctopup', 'CTOPUP'),
     ];
     final has = sections.any((s) => (_groups[s.$1] ?? []).isNotEmpty);

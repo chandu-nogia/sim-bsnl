@@ -25,7 +25,7 @@ class CtopupPage extends StatelessWidget {
         RecordField('number', 'Number'),
         RecordField('amount', 'Amount', keyboard: TextInputType.numberWithOptions(decimal: true)),
         RecordField('commission', 'Commission', keyboard: TextInputType.numberWithOptions(decimal: true)),
-        RecordField('balance', 'Balance', keyboard: TextInputType.numberWithOptions(decimal: true)),
+        RecordField('balance', 'Balance', kind: RecordFieldKind.computed),
         RecordField('transactionId', 'Txn / Reference'),
         RecordField('status', 'Status of payment', kind: RecordFieldKind.choice, options: [
           'Pending',

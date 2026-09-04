@@ -458,6 +458,7 @@ async function ownerDashboard(db) {
       cbcAmount: c.amount,
       ctopupAmount: t.amount,
       commission: Math.round((c.commission + t.commission) * 100) / 100,
+      walletChange: Math.round(((-c.amount - t.amount) + (c.commission + t.commission)) * 100) / 100,
       balance: Math.round((c.balance + t.balance) * 100) / 100,
       amount: Math.round((c.amount + t.amount) * 100) / 100,
     });
@@ -480,6 +481,9 @@ async function ownerDashboard(db) {
   const pending = ctopupStatus.Pending || ctopupStatus.pending || { n: 0, amount: 0 };
   const failed = ctopupStatus.Failed || ctopupStatus.failed || { n: 0, amount: 0 };
 
+  const { snapshot, remainingOf } = require('./wallet');
+  const snap = await snapshot(db);
+
   return {
     locationName: loc?.name || LOCATION_NAME,
     generatedAt: now.toISOString(),
@@ -488,15 +492,18 @@ async function ownerDashboard(db) {
     ctopup: topAll.n,
     totals: {
       records: sims + cbcAll.n + topAll.n,
+      walletAmount: snap.walletAmount,
       cbcAmount: cbcAll.amount,
       ctopupAmount: topAll.amount,
       combinedAmount: Math.round((cbcAll.amount + topAll.amount) * 100) / 100,
       cbcCommission: cbcAll.commission,
       ctopupCommission: topAll.commission,
       combinedCommission: Math.round((cbcAll.commission + topAll.commission) * 100) / 100,
-      cbcBalance: cbcAll.balance,
-      ctopupBalance: topAll.balance,
-      combinedBalance: Math.round((cbcAll.balance + topAll.balance) * 100) / 100,
+      cbcBalance: remainingOf(snap.walletAmount, cbcAll.amount, cbcAll.commission),
+      ctopupBalance: remainingOf(snap.walletAmount, topAll.amount, topAll.commission),
+      combinedBalance: snap.remainingBalance,
+      cbcNet: snap.cbcNet,
+      ctopupNet: snap.ctopupNet,
       avgCbc: cbcAll.n ? Math.round((cbcAll.amount / cbcAll.n) * 100) / 100 : 0,
       avgCtopup: topAll.n ? Math.round((topAll.amount / topAll.n) * 100) / 100 : 0,
     },
@@ -508,7 +515,8 @@ async function ownerDashboard(db) {
       ctopupAmount: todayTop.amount,
       combinedAmount: Math.round((todayCbc.amount + todayTop.amount) * 100) / 100,
       combinedCommission: Math.round((todayCbc.commission + todayTop.commission) * 100) / 100,
-      combinedBalance: Math.round((todayCbc.balance + todayTop.balance) * 100) / 100,
+      walletChange: remainingOf(0, todayCbc.amount + todayTop.amount, todayCbc.commission + todayTop.commission),
+      combinedBalance: remainingOf(0, todayCbc.amount + todayTop.amount, todayCbc.commission + todayTop.commission),
     },
     week: {
       sims: weekSims,
@@ -518,7 +526,8 @@ async function ownerDashboard(db) {
       ctopupAmount: weekTop.amount,
       combinedAmount: Math.round((weekCbc.amount + weekTop.amount) * 100) / 100,
       combinedCommission: Math.round((weekCbc.commission + weekTop.commission) * 100) / 100,
-      combinedBalance: Math.round((weekCbc.balance + weekTop.balance) * 100) / 100,
+      walletChange: remainingOf(0, weekCbc.amount + weekTop.amount, weekCbc.commission + weekTop.commission),
+      combinedBalance: remainingOf(0, weekCbc.amount + weekTop.amount, weekCbc.commission + weekTop.commission),
     },
     month: {
       sims: monthSims,
@@ -528,7 +537,8 @@ async function ownerDashboard(db) {
       ctopupAmount: monthTop.amount,
       combinedAmount: Math.round((monthCbc.amount + monthTop.amount) * 100) / 100,
       combinedCommission: Math.round((monthCbc.commission + monthTop.commission) * 100) / 100,
-      combinedBalance: Math.round((monthCbc.balance + monthTop.balance) * 100) / 100,
+      walletChange: remainingOf(0, monthCbc.amount + monthTop.amount, monthCbc.commission + monthTop.commission),
+      combinedBalance: remainingOf(0, monthCbc.amount + monthTop.amount, monthCbc.commission + monthTop.commission),
     },
     portalTypes,
     ctopupStatus: {

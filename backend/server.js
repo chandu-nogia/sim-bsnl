@@ -21,6 +21,7 @@ const {
 } = require('./lib/auth');
 const { cbc, ctopup } = require('./lib/records');
 const { ownerDashboard } = require('./lib/summary');
+const { setWallet, getWallet, recomputeBalances } = require('./lib/wallet');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
 const { changePassword, updateMe } = require('./lib/account');
@@ -110,7 +111,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-4' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-5' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -198,6 +199,24 @@ app.get('/api/dashboard', requireUser, async (_req, res) => {
   }
 });
 
+app.get('/api/wallet', requireUser, async (_req, res) => {
+  try {
+    send(res, await getWallet(await getDb()));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.put('/api/wallet', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await setWallet(await getDb(), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
 app.get('/api/sims', requireUser, async (req, res) => {
   try {
     const s = scoped(req);
@@ -280,6 +299,7 @@ function mountCrud(prefix, api) {
 }
 
 mountCrud('/api/cbc', cbc);
+mountCrud('/api/cbp', cbc);
 mountCrud('/api/ctopup', ctopup);
 
 if (fs.existsSync(WEB_DIR)) {
@@ -302,6 +322,7 @@ async function start() {
     await seedUsers(db);
     const { backfillDateKeys } = require('./lib/dates');
     await backfillDateKeys(db);
+    await recomputeBalances(db);
     await ensureIndexes(db);
     console.log('Owner account and Khatushyamji location ready');
   } catch (e) {

@@ -128,7 +128,7 @@ class _LoginPageState extends State<LoginPage> {
           ),
           SizedBox(height: 10),
           Text(
-            'Personal BSNL Management System — Portal, CBC aur CTOPUP.',
+            'Personal BSNL Management System — Portal, CBP aur CTOPUP.',
             style: TextStyle(color: Color(0xFFD7DEEA), fontSize: 15, height: 1.5),
           ),
         ],

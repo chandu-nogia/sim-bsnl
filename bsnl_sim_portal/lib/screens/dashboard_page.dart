@@ -100,6 +100,15 @@ class _DashboardHomeState extends State<DashboardHome> {
             _ErrorBanner(message: _error!, onRetry: _load),
           ],
           const SizedBox(height: 16),
+          _WalletCard(
+            auth: widget.auth,
+            wallet: asNum(_totals['walletAmount']),
+            remaining: asNum(_totals['combinedBalance']),
+            amount: asNum(_totals['combinedAmount']),
+            commission: asNum(_totals['combinedCommission']),
+            onSaved: _load,
+          ),
+          const SizedBox(height: 16),
           _SectionTitle('Overview', 'Khatushyamji totals'),
           const SizedBox(height: 10),
           _Responsive(
@@ -113,9 +122,9 @@ class _DashboardHomeState extends State<DashboardHome> {
                 onTap: () => widget.onOpenSection?.call('portal'),
               ),
               _Kpi(
-                title: 'CBC Collection',
+                title: 'CBP Collection',
                 value: rupee(asNum(_totals['cbcAmount'])),
-                subtitle: '${asNum(_data['cbc']).round()} bills  ·  comm ${rupee(asNum(_totals['cbcCommission']))}  ·  bal ${rupee(asNum(_totals['cbcBalance']))}',
+                subtitle: '${asNum(_data['cbc']).round()} bills  ·  comm ${rupee(asNum(_totals['cbcCommission']))}',
                 icon: Icons.receipt_long_outlined,
                 colors: const [Color(0xFF15803D), Color(0xFF22C55E)],
                 onTap: () => widget.onOpenSection?.call('cbc'),
@@ -123,7 +132,7 @@ class _DashboardHomeState extends State<DashboardHome> {
               _Kpi(
                 title: 'CTOPUP Collection',
                 value: rupee(asNum(_totals['ctopupAmount'])),
-                subtitle: '${asNum(_data['ctopup']).round()} txns  ·  comm ${rupee(asNum(_totals['ctopupCommission']))}  ·  bal ${rupee(asNum(_totals['ctopupBalance']))}',
+                subtitle: '${asNum(_data['ctopup']).round()} txns  ·  comm ${rupee(asNum(_totals['ctopupCommission']))}',
                 icon: Icons.payments_outlined,
                 colors: const [Color(0xFF7C3AED), Color(0xFFEC4899)],
                 onTap: () => widget.onOpenSection?.call('ctopup'),
@@ -131,21 +140,21 @@ class _DashboardHomeState extends State<DashboardHome> {
               _Kpi(
                 title: 'Total Amount',
                 value: rupee(asNum(_totals['combinedAmount'])),
-                subtitle: 'CBC ${rupee(asNum(_totals['cbcAmount']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupAmount']))}',
+                subtitle: 'CBP ${rupee(asNum(_totals['cbcAmount']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupAmount']))}',
                 icon: Icons.account_balance_wallet_outlined,
                 colors: const [Color(0xFF0E7490), Color(0xFF06B6D4)],
               ),
               _Kpi(
                 title: 'Total Commission',
                 value: rupee(asNum(_totals['combinedCommission'])),
-                subtitle: 'CBC ${rupee(asNum(_totals['cbcCommission']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupCommission']))}',
+                subtitle: 'CBP ${rupee(asNum(_totals['cbcCommission']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupCommission']))}',
                 icon: Icons.percent_outlined,
                 colors: const [Color(0xFFB45309), Color(0xFFF59E0B)],
               ),
               _Kpi(
                 title: 'Total Balance',
                 value: rupee(asNum(_totals['combinedBalance'])),
-                subtitle: 'CBC ${rupee(asNum(_totals['cbcBalance']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupBalance']))}',
+                subtitle: 'Wallet ${rupee(asNum(_totals['walletAmount']))}  −  amount  +  commission',
                 icon: Icons.savings_outlined,
                 colors: const [Color(0xFF0F766E), Color(0xFF14B8A6)],
               ),
@@ -156,7 +165,7 @@ class _DashboardHomeState extends State<DashboardHome> {
           const SizedBox(height: 10),
           _PeriodTable(today: _today, week: _week, month: _month),
           const SizedBox(height: 20),
-          _SectionTitle('Last 7 days', 'CBC + CTOPUP amount'),
+          _SectionTitle('Last 7 days', 'CBP + CTOPUP amount'),
           const SizedBox(height: 10),
           _DayChart(days: _daily),
           const SizedBox(height: 20),
@@ -182,7 +191,7 @@ class _DashboardHomeState extends State<DashboardHome> {
             onOpenModule: widget.onOpenSection,
           ),
           const SizedBox(height: 20),
-          _SectionTitle('Recent activity', 'Latest Portal / CBC / CTOPUP work'),
+          _SectionTitle('Recent activity', 'Latest Portal / CBP / CTOPUP work'),
           const SizedBox(height: 8),
           if (_activity.isEmpty)
             const Card(
@@ -214,6 +223,135 @@ class _DashboardHomeState extends State<DashboardHome> {
     if (section == 'ctopup') return Icons.payments_outlined;
     if (section == 'auth') return Icons.login;
     return Icons.sim_card_outlined;
+  }
+}
+
+class _WalletCard extends StatefulWidget {
+  const _WalletCard({
+    required this.auth,
+    required this.wallet,
+    required this.remaining,
+    required this.amount,
+    required this.commission,
+    required this.onSaved,
+  });
+  final AuthStore auth;
+  final num wallet;
+  final num remaining;
+  final num amount;
+  final num commission;
+  final Future<void> Function() onSaved;
+
+  @override
+  State<_WalletCard> createState() => _WalletCardState();
+}
+
+class _WalletCardState extends State<_WalletCard> {
+  late final TextEditingController _ctrl;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.wallet == 0 ? '' : '${widget.wallet}');
+  }
+
+  @override
+  void didUpdateWidget(covariant _WalletCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.wallet != widget.wallet && !_busy) {
+      _ctrl.text = widget.wallet == 0 ? '' : '${widget.wallet}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      await widget.auth.api.saveWallet(widget.auth.apiBase, _ctrl.text.trim());
+      await widget.onSaved();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Total amount / wallet save ho gaya')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Balance (Total Amount)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+            const SizedBox(height: 4),
+            const Text(
+              'Yahan total amount likho. CBP aur CTOPUP ki amount se balance kam hoga, commission add hoga.',
+              style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, box) {
+                final wide = box.maxWidth >= 640;
+                final field = TextField(
+                  controller: _ctrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Total amount (wallet)', prefixText: '₹ '),
+                );
+                final save = FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? 'Saving…' : 'Save wallet'),
+                );
+                if (!wide) {
+                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [field, const SizedBox(height: 10), save]);
+                }
+                return Row(
+                  children: [
+                    Expanded(child: field),
+                    const SizedBox(width: 12),
+                    save,
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                _mini('Remaining', rupee(widget.remaining), const Color(0xFF0F766E)),
+                _mini('Amount used', rupee(widget.amount), const Color(0xFF0E7490)),
+                _mini('Commission added', rupee(widget.commission), const Color(0xFFB45309)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mini(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11)),
+          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+        ],
+      ),
+    );
   }
 }
 
@@ -409,10 +547,10 @@ class _PeriodTable extends StatelessWidget {
             Text(rupee(asNum(m['combinedAmount'])), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
             const SizedBox(height: 8),
             Text('Portal  ${asNum(m['sims']).round()}', style: const TextStyle(fontWeight: FontWeight.w700)),
-            Text('CBC  ${asNum(m['cbc']).round()}  ·  ${rupee(asNum(m['cbcAmount']))}', style: const TextStyle(fontWeight: FontWeight.w600, color: BsnlColors.muted)),
+            Text('CBP  ${asNum(m['cbc']).round()}  ·  ${rupee(asNum(m['cbcAmount']))}', style: const TextStyle(fontWeight: FontWeight.w600, color: BsnlColors.muted)),
             Text('CTOPUP  ${asNum(m['ctopup']).round()}  ·  ${rupee(asNum(m['ctopupAmount']))}', style: const TextStyle(fontWeight: FontWeight.w600, color: BsnlColors.muted)),
             Text('Commission  ${rupee(asNum(m['combinedCommission']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
-            Text('Balance  ${rupee(asNum(m['combinedBalance']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text('Wallet change  ${rupee(asNum(m['walletChange'] ?? m['combinedBalance']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
       );
@@ -604,7 +742,7 @@ class LocationPortalGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = [
       ('BSNL Portal', 'CYMN / MNP / Swap / Postpaid', Icons.sim_card_outlined, const [Color(0xFF0B3D91), Color(0xFF1A73E8)], 'portal'),
-      ('CBC List', 'Bills, amount, transaction ID', Icons.receipt_long_outlined, const [Color(0xFF0E7490), Color(0xFF22C55E)], 'cbc'),
+      ('CBP List', 'Bills, amount, transaction ID', Icons.receipt_long_outlined, const [Color(0xFF0E7490), Color(0xFF22C55E)], 'cbc'),
       ('CTOPUP', 'Recharge, amount, payment status', Icons.payments_outlined, const [Color(0xFF7C3AED), Color(0xFFEC4899)], 'ctopup'),
     ];
     return LayoutBuilder(

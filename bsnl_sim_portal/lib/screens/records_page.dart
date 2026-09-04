@@ -10,7 +10,7 @@ import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
-enum RecordFieldKind { text, date, choice }
+enum RecordFieldKind { text, date, choice, computed }
 
 class RecordField {
   const RecordField(
@@ -65,6 +65,8 @@ class _RecordsPageState extends State<RecordsPage> {
   String _order = 'desc';
   DateTime? _from;
   DateTime? _to;
+  num _wallet = 0;
+  num _remaining = 0;
 
   bool get _hasStatus {
     for (final f in widget.fields) {
@@ -120,6 +122,8 @@ class _RecordsPageState extends State<RecordsPage> {
         _total = out.total;
         _page = out.page;
         _limit = out.limit == 0 ? _limit : out.limit;
+        _wallet = out.walletAmount;
+        _remaining = out.remainingBalance;
       });
     } catch (e) {
       setState(() => _error = '$e');
@@ -273,6 +277,18 @@ class _RecordsPageState extends State<RecordsPage> {
               runSpacing: 12,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF6EE7B7)),
+                  ),
+                  child: Text(
+                    'Remaining ${rupee(_remaining)}   ·   Wallet ${rupee(_wallet)} − amount + commission',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
+                  ),
+                ),
                 SizedBox(
                   width: 280,
                   child: TextField(
@@ -551,11 +567,13 @@ class _RecordFormPageState extends State<RecordFormPage> {
   Map<String, String> _body() {
     return {
       for (final f in widget.fields)
-        f.key: switch (f.kind) {
-          RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
-          RecordFieldKind.choice => _choices[f.key] ?? '',
-          RecordFieldKind.text => _ctrls[f.key]!.text.trim(),
-        },
+        if (f.kind != RecordFieldKind.computed)
+          f.key: switch (f.kind) {
+            RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
+            RecordFieldKind.choice => _choices[f.key] ?? '',
+            RecordFieldKind.text => _ctrls[f.key]!.text.trim(),
+            RecordFieldKind.computed => '',
+          },
     };
   }
 
@@ -585,7 +603,15 @@ class _RecordFormPageState extends State<RecordFormPage> {
               style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
+            if (widget.fields.any((f) => f.kind == RecordFieldKind.computed)) ...[
+              const Text(
+                'Balance auto nikalta hai: wallet (total amount) − amount + commission.',
+                style: TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+            ],
             for (final f in widget.fields)
+              if (f.kind != RecordFieldKind.computed)
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: switch (f.kind) {
@@ -613,6 +639,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
                       keyboardType: f.keyboard,
                       decoration: InputDecoration(labelText: f.label),
                     ),
+                  RecordFieldKind.computed => const SizedBox.shrink(),
                 },
               ),
             const SizedBox(height: 8),
