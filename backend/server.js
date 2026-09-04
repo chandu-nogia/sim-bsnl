@@ -105,7 +105,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-1' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-2' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -289,6 +289,9 @@ if (fs.existsSync(WEB_DIR)) {
 }
 
 async function start() {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`BSNL Khatushyamji API  http://localhost:${PORT}`);
+  });
   try {
     const db = await getDb();
     await seedUsers(db);
@@ -297,9 +300,6 @@ async function start() {
   } catch (e) {
     console.warn('Startup seed/index skip:', String(e.message || e));
   }
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`BSNL Khatushyamji API  http://localhost:${PORT}`);
-  });
 }
 
 start();
