@@ -5,7 +5,6 @@ import '../app_theme.dart';
 import '../models/sim_entry.dart';
 import '../state/sim_store.dart';
 import 'fade_in.dart';
-import 'location_picker.dart';
 
 Future<void> showEntryForm(
   BuildContext context,
@@ -36,8 +35,6 @@ class _EntryFormPageState extends State<_EntryFormPage> {
   SimType _type = SimType.cymn;
   String _frc = '';
   bool _saving = false;
-  int? _locationId;
-  List<LocationOption> _locations = [];
 
   bool get _editing => widget.existing != null;
 
@@ -53,22 +50,7 @@ class _EntryFormPageState extends State<_EntryFormPage> {
       _date = _parseDate(e.date);
       _type = e.type;
       _frc = frcChoices.contains(e.frc) ? e.frc : '';
-      _locationId = e.locationId ?? widget.store.locationId ?? widget.store.auth.effectiveLocationId;
-    } else {
-      _locationId = widget.store.locationId ?? widget.store.auth.effectiveLocationId;
     }
-    _loadLocations();
-  }
-
-  Future<void> _loadLocations() async {
-    try {
-      final rows = await loadLocationOptions(widget.store.auth);
-      if (!mounted) return;
-      setState(() {
-        _locations = rows;
-        _locationId ??= widget.store.locationId ?? widget.store.auth.effectiveLocationId ?? (rows.length == 1 ? rows.first.id : null);
-      });
-    } catch (_) {}
   }
 
   DateTime _parseDate(String raw) {
@@ -109,9 +91,10 @@ class _EntryFormPageState extends State<_EntryFormPage> {
   }
 
   Future<void> _save() async {
-    if (_locationId == null) {
+    final loc = widget.store.auth.effectiveLocationId;
+    if (loc == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Jagah choose karo')),
+        const SnackBar(content: Text('Login dubara karo')),
       );
       return;
     }
@@ -132,9 +115,9 @@ class _EntryFormPageState extends State<_EntryFormPage> {
     );
     try {
       if (existing != null) {
-        await widget.store.updateEntry(existing, entry, locationId: _locationId);
+        await widget.store.updateEntry(existing, entry, locationId: loc);
       } else {
-        await widget.store.addEntry(entry, locationId: _locationId);
+        await widget.store.addEntry(entry, locationId: loc);
       }
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -175,13 +158,6 @@ class _EntryFormPageState extends State<_EntryFormPage> {
                       child: SingleChildScrollView(
                         child: Column(
                           children: [
-                            JagahField(
-                              locations: _locations,
-                              value: _locationId,
-                              onChanged: (v) => setState(() => _locationId = v),
-                              enabled: widget.store.auth.isAdmin,
-                            ),
-                            const SizedBox(height: 12),
                             Row(
                               children: [
                                 Expanded(

@@ -315,4 +315,35 @@ async function locationSummary(db, user, locationId) {
   return { status: 200, json: { ok: true, location: row } };
 }
 
-module.exports = { adminSummary, locationSummary, money: moneyNumber };
+async function ownerDashboard(db) {
+  const { khatuLocation, khatuQuery, LOCATION_NAME } = require('./site');
+  const loc = await khatuLocation(db);
+  const locQ = loc ? khatuQuery(loc) : { locationId: 1 };
+  const alive = withAlive(locQ);
+  const today = isoDay();
+  const [sims, cbcCount, ctopupCount, todaySims, todayCbc, todayTop, activity] = await Promise.all([
+    db.collection('sims').countDocuments(alive),
+    db.collection('cbc').countDocuments(alive),
+    db.collection('ctopup').countDocuments(alive),
+    db.collection('sims').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
+    db.collection('cbc').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
+    db.collection('ctopup').countDocuments(withAlive({ ...locQ, date: { $regex: `^${today}` } })),
+    db.collection('activity').find({ locationId: Number(loc?.id) || 1 }).sort({ id: -1 }).limit(10).toArray(),
+  ]);
+  return {
+    locationName: loc?.name || LOCATION_NAME,
+    sims,
+    cbc: cbcCount,
+    ctopup: ctopupCount,
+    today: { sims: todaySims, cbc: todayCbc, ctopup: todayTop },
+    activity: activity.map((a) => ({
+      at: a.at || '',
+      name: a.name || a.email || '',
+      action: a.action || '',
+      section: a.section || '',
+      detail: a.detail || '',
+    })),
+  };
+}
+
+module.exports = { adminSummary, locationSummary, ownerDashboard, money: moneyNumber };

@@ -32,7 +32,7 @@ class _BsnlSimAppState extends State<BsnlSimApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BSNL Portal',
+      title: 'BSNL Khatushyamji',
       debugShowCheckedModeBanner: false,
       theme: buildBsnlTheme(),
       home: AnimatedBuilder(

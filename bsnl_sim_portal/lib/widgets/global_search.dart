@@ -12,7 +12,7 @@ class GlobalSearchButton extends StatelessWidget {
     required this.onOpen,
   });
   final AuthStore auth;
-  final void Function(String section, {int? locationId, String locationName, String? employeeEmail}) onOpen;
+  final ValueChanged<String> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -32,20 +32,19 @@ class GlobalSearchButton extends StatelessWidget {
 class _PortalSearch extends SearchDelegate<void> {
   _PortalSearch({required this.auth, required this.onOpen});
   final AuthStore auth;
-  final void Function(String section, {int? locationId, String locationName, String? employeeEmail}) onOpen;
+  final ValueChanged<String> onOpen;
   Timer? _debounce;
   Map<String, List<Map<String, dynamic>>> _groups = {};
   bool _loading = false;
   String _last = '';
 
   @override
-  String get searchFieldLabel => 'Search name, mobile, email, ID, Txn…';
+  String get searchFieldLabel => 'Search name, mobile, number, ID…';
 
   @override
   List<Widget>? buildActions(BuildContext context) {
     return [
-      if (query.isNotEmpty)
-        IconButton(onPressed: () => query = '', icon: const Icon(Icons.close)),
+      if (query.isNotEmpty) IconButton(onPressed: () => query = '', icon: const Icon(Icons.close)),
     ];
   }
 
@@ -89,32 +88,31 @@ class _PortalSearch extends SearchDelegate<void> {
       _debounce = Timer(const Duration(milliseconds: 320), () async {
         await _run(q);
         if (!context.mounted) return;
-        if (query.trim() == q) {
-          showSuggestions(context);
-        }
+        if (query.trim() == q) showSuggestions(context);
       });
     }
     if (q.length < 2) {
       return const Padding(
         padding: EdgeInsets.all(24),
-        child: Text('Type at least 2 characters. Search employees, locations, Portal, CBC, C-TopUp.', style: TextStyle(color: BsnlColors.muted)),
+        child: Text(
+          'Type at least 2 characters. Search Portal, CBC, CTOPUP.',
+          style: TextStyle(color: BsnlColors.muted),
+        ),
       );
     }
     if (_loading && _groups.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    final sections = [
-      ('employees', 'Employees'),
-      ('locations', 'Locations'),
+    const sections = [
       ('sims', 'BSNL Portal'),
-      ('cbc', 'CBC'),
-      ('ctopup', 'C-TopUp'),
+      ('cbc', 'CBC List'),
+      ('ctopup', 'CTOPUP'),
     ];
     final has = sections.any((s) => (_groups[s.$1] ?? []).isNotEmpty);
     if (!has) {
       return const Padding(
         padding: EdgeInsets.all(24),
-        child: Text('No records found for the selected filters.', style: TextStyle(color: BsnlColors.muted)),
+        child: Text('No matching records.', style: TextStyle(color: BsnlColors.muted)),
       );
     }
     return ListView(
@@ -132,12 +130,7 @@ class _PortalSearch extends SearchDelegate<void> {
                 onTap: () {
                   close(context, null);
                   final section = '${r['section'] ?? s.$1}';
-                  onOpen(
-                    section == 'sims' ? 'portal' : section,
-                    locationId: int.tryParse('${r['locationId'] ?? ''}'),
-                    locationName: '${r['locationName'] ?? ''}',
-                    employeeEmail: '${r['email'] ?? ''}',
-                  );
+                  onOpen(section == 'sims' ? 'portal' : section);
                 },
               ),
           ],

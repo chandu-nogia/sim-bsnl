@@ -32,8 +32,9 @@ async function handleApi(request, env) {
     const db = await getDb(env);
 
     if (path === '/api/sims' && request.method === 'GET') {
-      const rows = await listSims(db);
-      return json(200, { ok: true, rows });
+      const out = await listSims(db);
+      const payload = Array.isArray(out) ? { rows: out } : out;
+      return json(200, { ok: true, ...payload });
     }
 
     if (path === '/api/sims' && request.method === 'POST') {

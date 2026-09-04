@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -7,7 +9,6 @@ import '../services/pdf_export.dart';
 import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
-import '../widgets/location_picker.dart';
 
 enum RecordFieldKind { text, date, choice }
 
@@ -54,6 +55,26 @@ class _RecordsPageState extends State<RecordsPage> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _rows = [];
+  final _search = TextEditingController();
+  Timer? _debounce;
+  int _page = 1;
+  int _limit = 50;
+  int _total = 0;
+  String _status = 'All';
+
+  bool get _hasStatus {
+    for (final f in widget.fields) {
+      if (f.key == 'status' && f.kind == RecordFieldKind.choice) return true;
+    }
+    return false;
+  }
+
+  List<String> get _statusOptions {
+    for (final f in widget.fields) {
+      if (f.key == 'status') return f.options;
+    }
+    return const [];
+  }
 
   @override
   void initState() {
@@ -61,8 +82,14 @@ class _RecordsPageState extends State<RecordsPage> {
     _load();
   }
 
-  int? get _scopeLocationId =>
-      widget.auth.isAdmin ? widget.locationId : widget.auth.effectiveLocationId;
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
+
+  int? get _scopeLocationId => widget.auth.effectiveLocationId;
 
   Future<void> _load() async {
     setState(() {
@@ -71,22 +98,34 @@ class _RecordsPageState extends State<RecordsPage> {
     });
     try {
       final loc = _scopeLocationId;
-      final rows = await widget.auth.api.listRows(
+      final out = await widget.auth.api.listPage(
         widget.auth.apiBase,
         widget.path,
         locationId: loc,
+        q: _search.text.trim(),
+        status: _status == 'All' ? null : _status,
+        page: _page,
+        limit: _limit,
       );
       setState(() {
-        _rows = [
-          for (final r in rows)
-            if (loc == null || asInt(r['locationId']) == null || asInt(r['locationId']) == loc) r,
-        ];
+        _rows = out.rows;
+        _total = out.total;
+        _page = out.page;
+        _limit = out.limit == 0 ? _limit : out.limit;
       });
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _onSearch(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 280), () {
+      _page = 1;
+      _load();
+    });
   }
 
   int? _idOf(Map<String, dynamic> row) {
@@ -112,9 +151,7 @@ class _RecordsPageState extends State<RecordsPage> {
     if (body == null || !mounted) return;
     try {
       final id = existing == null ? null : _idOf(existing);
-      final loc = widget.auth.isAdmin
-          ? (int.tryParse(body['locationId'] ?? '') ?? _scopeLocationId)
-          : widget.auth.effectiveLocationId;
+      final loc = widget.auth.effectiveLocationId;
       if (existing == null) {
         await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: loc);
       } else {
@@ -137,7 +174,7 @@ class _RecordsPageState extends State<RecordsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete?'),
-        content: Text('${row['name'] ?? id} recycle bin mein chali jayegi (30 din).'),
+        content: Text('Delete ${row['name'] ?? id}? This cannot be undone from the list.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -154,9 +191,7 @@ class _RecordsPageState extends State<RecordsPage> {
         widget.auth.apiBase,
         widget.path,
         id,
-        locationId: widget.auth.isAdmin
-            ? (asInt(row['locationId']) ?? widget.locationId)
-            : widget.auth.effectiveLocationId,
+        locationId: widget.auth.effectiveLocationId,
       );
       await _load();
     } catch (e) {
@@ -166,71 +201,15 @@ class _RecordsPageState extends State<RecordsPage> {
     }
   }
 
-  String get _importKind => widget.path.contains('cbc') ? 'cbc' : 'ctopup';
-
-  Future<void> _importCsv() async {
-    final ctrl = TextEditingController();
-    final raw = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Import CSV'),
-        content: SizedBox(
-          width: 480,
-          child: TextField(
-            controller: ctrl,
-            maxLines: 10,
-            decoration: const InputDecoration(
-              hintText: 'Header row + data. Example:\ndate,name,mobile,amount,transactionId',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Import')),
-        ],
-      ),
-    );
-    if (raw == null || raw.trim().isEmpty || !mounted) return;
-    final lines = raw.trim().split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
-    if (lines.length < 2) return;
-    final headers = lines.first.split(',').map((s) => s.trim()).toList();
-    final rows = <Map<String, dynamic>>[];
-    for (final line in lines.skip(1)) {
-      final cells = line.split(',');
-      final m = <String, dynamic>{};
-      for (var i = 0; i < headers.length && i < cells.length; i++) {
-        m[headers[i]] = cells[i].trim();
-      }
-      rows.add(m);
-    }
-    try {
-      final out = await widget.auth.api.importRows(
-        widget.auth.apiBase,
-        _importKind,
-        rows,
-        locationId: _scopeLocationId,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Imported ${out['added'] ?? 0}, failed ${out['failed'] ?? 0}')),
-        );
-      }
-      await _load();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
-  }
-
   Future<void> _pdf({required bool share}) async {
     await downloadRecordsPdf(
       context,
       title: widget.title,
-      headers: ['S.No.', 'Jagah', ...widget.fields.map((f) => f.label)],
+      headers: ['S.No.', ...widget.fields.map((f) => f.label)],
       rows: [
         for (var i = 0; i < _rows.length; i++)
           [
-            '${i + 1}',
-            '${_rows[i]['locationName'] ?? widget.locationName ?? ''}',
+            '${((_page - 1) * _limit) + i + 1}',
             for (final f in widget.fields) '${_rows[i][f.key] ?? ''}',
           ],
       ],
@@ -250,11 +229,6 @@ class _RecordsPageState extends State<RecordsPage> {
               : '${widget.title}  •  ${widget.locationName}',
         ),
         actions: [
-          IconButton(
-            tooltip: 'Import CSV',
-            onPressed: canWrite ? _importCsv : null,
-            icon: const Icon(Icons.upload_file_outlined),
-          ),
           IconButton(
             tooltip: 'Download colorful PDF',
             onPressed: _loading || _rows.isEmpty ? null : () => _pdf(share: false),
@@ -284,6 +258,60 @@ class _RecordsPageState extends State<RecordsPage> {
               padding: const EdgeInsets.all(12),
               child: Text(_error!, style: TextStyle(color: Colors.red.shade900)),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 280,
+                  child: TextField(
+                    controller: _search,
+                    onChanged: _onSearch,
+                    decoration: const InputDecoration(
+                      hintText: 'Search name / number / ID',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                if (_hasStatus)
+                  SizedBox(
+                    width: 160,
+                    child: DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _status,
+                      decoration: const InputDecoration(labelText: 'Status', isDense: true),
+                      items: [
+                        const DropdownMenuItem(value: 'All', child: Text('All')),
+                        for (final o in _statusOptions) DropdownMenuItem(value: o, child: Text(o)),
+                      ],
+                      onChanged: (v) {
+                        _status = v ?? 'All';
+                        _page = 1;
+                        _load();
+                      },
+                    ),
+                  ),
+                Text(
+                  _total == 0 ? '0 rows' : '${((_page - 1) * _limit) + 1}–${(((_page - 1) * _limit) + _rows.length).clamp(0, _total)} of $_total',
+                  style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+                ),
+                IconButton(
+                  tooltip: 'Previous',
+                  onPressed: _page <= 1 || _loading ? null : () { _page -= 1; _load(); },
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                IconButton(
+                  tooltip: 'Next',
+                  onPressed: _loading || (_page * _limit) >= _total ? null : () { _page += 1; _load(); },
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -311,7 +339,6 @@ class _RecordsPageState extends State<RecordsPage> {
                                 dataRowMaxHeight: 58,
                                 columns: [
                                   const DataColumn(label: Text('S.No.'), numeric: true),
-                                  const DataColumn(label: Text('Jagah')),
                                   for (final f in widget.fields) DataColumn(label: Text(f.label)),
                                   if (canWrite) const DataColumn(label: Text('Actions')),
                                 ],
@@ -324,14 +351,13 @@ class _RecordsPageState extends State<RecordsPage> {
                                       cells: [
                                         DataCell(
                                           Text(
-                                            '${i + 1}',
+                                            '${((_page - 1) * _limit) + i + 1}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w800,
                                               fontFeatures: [FontFeature.tabularFigures()],
                                             ),
                                           ),
                                         ),
-                                        DataCell(Text('${_rows[i]['locationName'] ?? widget.locationName ?? ''}')),
                                         for (final f in widget.fields)
                                           DataCell(_cellValue(_rows[i], f)),
                                         if (canWrite)
@@ -403,13 +429,10 @@ class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, TextEditingController> _ctrls;
   late final Map<String, DateTime> _dates;
   late final Map<String, String> _choices;
-  int? _locationId;
-  List<LocationOption> _locations = [];
 
   @override
   void initState() {
     super.initState();
-    _locationId = widget.locationId ?? asInt(widget.initial?['locationId']);
     _ctrls = {
       for (final f in widget.fields)
         if (f.kind == RecordFieldKind.text)
@@ -424,20 +447,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
         if (f.kind == RecordFieldKind.choice)
           f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
     };
-    _loadLocations();
-  }
-
-  Future<void> _loadLocations() async {
-    final auth = widget.auth;
-    if (auth == null) return;
-    try {
-      final rows = await loadLocationOptions(auth);
-      if (!mounted) return;
-      setState(() {
-        _locations = rows;
-        _locationId ??= rows.length == 1 ? rows.first.id : null;
-      });
-    } catch (_) {}
   }
 
   String _choiceValue(RecordField f, String raw) {
@@ -455,7 +464,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
 
   Map<String, String> _body() {
     return {
-      'locationId': '${_locationId ?? ''}',
       for (final f in widget.fields)
         f.key: switch (f.kind) {
           RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
@@ -491,15 +499,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
               style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
-            if (widget.auth != null) ...[
-              JagahField(
-                locations: _locations,
-                value: _locationId,
-                onChanged: (v) => setState(() => _locationId = v),
-                enabled: widget.auth?.isAdmin ?? false,
-              ),
-              const SizedBox(height: 14),
-            ],
             for (final f in widget.fields)
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
@@ -532,15 +531,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
               ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: () {
-                if (widget.auth != null && _locationId == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Jagah choose karo')),
-                  );
-                  return;
-                }
-                Navigator.pop(context, _body());
-              },
+              onPressed: () => Navigator.pop(context, _body()),
               icon: Icon(adding ? Icons.add : Icons.save_outlined),
               label: Text(adding ? 'Save' : 'Update'),
             ),

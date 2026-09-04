@@ -16,9 +16,7 @@ class _LoginPageState extends State<LoginPage> {
   final _password = TextEditingController();
   bool _busy = false;
   bool _hide = true;
-  bool _forgot = false;
   String? _error;
-  String? _info;
 
   @override
   void dispose() {
@@ -31,15 +29,9 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _busy = true;
       _error = null;
-      _info = null;
     });
     try {
-      if (_forgot) {
-        final msg = await widget.auth.api.forgotPassword(widget.auth.apiBase, _email.text);
-        setState(() => _info = msg);
-      } else {
-        await widget.auth.login(_email.text, _password.text);
-      }
+      await widget.auth.login(_email.text, _password.text);
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -59,65 +51,54 @@ class _LoginPageState extends State<LoginPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                _forgot ? 'Reset request' : 'Sign in',
-                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
+              const Text(
+                'Sign in',
+                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
               ),
               const SizedBox(height: 6),
-              Text(
-                _forgot
-                    ? 'Admin ko request chali jayegi. Naya password admin set karega.'
-                    : 'Admin ya employee account se continue karo.',
-                style: const TextStyle(color: BsnlColors.muted, height: 1.4),
+              const Text(
+                'Khatushyamji personal account se login karo.',
+                style: TextStyle(color: BsnlColors.muted, height: 1.4),
               ),
               const SizedBox(height: 22),
               TextField(
                 controller: _email,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.username, AutofillHints.email],
                 decoration: const InputDecoration(
-                  labelText: 'Email / Login ID',
+                  labelText: 'Email / Username',
                   prefixIcon: Icon(Icons.mail_outline),
                 ),
               ),
-              if (!_forgot) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _password,
-                  obscureText: _hide,
-                  onSubmitted: (_) => _busy ? null : _submit(),
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      onPressed: () => setState(() => _hide = !_hide),
-                      icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                    ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _password,
+                obscureText: _hide,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => _busy ? null : _submit(),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _hide = !_hide),
+                    icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                   ),
                 ),
-              ],
+              ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(_error!, style: const TextStyle(color: BsnlColors.saffron, fontWeight: FontWeight.w700)),
-              ],
-              if (_info != null) ...[
-                const SizedBox(height: 12),
-                Text(_info!, style: const TextStyle(color: BsnlColors.success, fontWeight: FontWeight.w700)),
               ],
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: _busy ? null : _submit,
                 child: _busy
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_forgot ? 'Send request' : 'Login'),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => setState(() {
-                  _forgot = !_forgot;
-                  _error = null;
-                  _info = null;
-                }),
-                child: Text(_forgot ? 'Back to login' : 'Forgot password?'),
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Login'),
               ),
             ],
           ),
@@ -135,27 +116,19 @@ class _LoginPageState extends State<LoginPage> {
           colors: [Color(0xFF071A44), Color(0xFF0B3D91), Color(0xFF7C3AED)],
         ),
       ),
-      child: Column(
+      child: const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: BsnlColors.gold,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.cell_tower, color: BsnlColors.navyDark, size: 30),
-          ),
-          const SizedBox(height: 22),
-          const Text(
-            'BSNL Management',
+          _BrandMark(),
+          SizedBox(height: 22),
+          Text(
+            'BSNL Khatushyamji',
             style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, height: 1.2),
           ),
-          const SizedBox(height: 10),
-          const Text(
-            'Location-wise Portal, CBC and C-TopUp. Har shop ka data alag aur safe.',
+          SizedBox(height: 10),
+          Text(
+            'Personal BSNL Management System — Portal, CBC aur CTOPUP.',
             style: TextStyle(color: Color(0xFFD7DEEA), fontSize: 15, height: 1.5),
           ),
         ],
@@ -184,6 +157,23 @@ class _LoginPageState extends State<LoginPage> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: BsnlColors.gold,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Icon(Icons.cell_tower, color: BsnlColors.navyDark, size: 30),
     );
   }
 }

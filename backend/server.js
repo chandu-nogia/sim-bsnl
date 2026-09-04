@@ -13,31 +13,18 @@ const {
   seedUsers,
   login,
   requireUser,
-  requireAdmin,
   publicUser,
   signToken,
   listScope,
   writeScope,
   assertRowLocation,
-  listLocations,
-  addLocation,
-  updateLocation,
-  deleteLocation,
-  locationNameOf,
 } = require('./lib/auth');
 const { cbc, ctopup } = require('./lib/records');
-const { listActivity } = require('./lib/activity');
-const { adminSummary, locationSummary } = require('./lib/summary');
-const { listEmployees, employeeDetail, addEmployee, updateEmployee, resetPassword, deleteEmployee } = require('./lib/employees');
-const { buildReport } = require('./lib/reports');
+const { ownerDashboard } = require('./lib/summary');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
-const { changePassword, updateMe, forgotPassword } = require('./lib/account');
-const { previewLocation } = require('./lib/location_resolve');
-const { listDeleted, restoreRow, purgeRow } = require('./lib/recycle');
-const { getStock, saveStock, listClosing, addClosing, reviewClosing, importRows, todayStats } = require('./lib/shop');
+const { changePassword, updateMe } = require('./lib/account');
 const { globalSearch } = require('./lib/search');
-const { listNotifications, systemHealth } = require('./lib/ops');
 
 const PORT = Number(process.env.PORT) || 5050;
 const WEB_DIR = path.join(__dirname, '..', 'bsnl_sim_portal', 'build', 'web');
@@ -66,9 +53,9 @@ function corsOrigin(origin, cb) {
 }
 app.use(cors({
   origin: corsOrigin,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Location-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.options('*', cors({ origin: corsOrigin, allowedHeaders: ['Content-Type', 'Authorization', 'X-Location-Id'] }));
+app.options('*', cors({ origin: corsOrigin, allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '2mb' }));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -90,7 +77,6 @@ function scoped(req) {
     q: req.query?.q || req.query?.search || '',
     from: req.query?.from || '',
     to: req.query?.to || '',
-    employee: req.query?.employee || '',
     status: req.query?.status || '',
     page: req.query?.page,
     limit: req.query?.limit,
@@ -102,23 +88,16 @@ function unwrapList(result) {
   return result;
 }
 
-async function writeMeta(req, body) {
-  const s = writeScope(req, body || {});
+function writeMeta(req) {
+  const s = writeScope(req);
   if (s.error) return { ok: false, status: s.status || 400, error: s.error };
-  const db = await getDb();
-  const loc = await db.collection('locations').findOne({ id: Number(s.locationId) });
-  if (!loc) return { ok: false, status: 400, error: 'Jagah nahi mili' };
-  if (loc.status === 'inactive' && req.user.role !== 'admin') {
-    return { ok: false, status: 403, error: 'Ye jagah deactivate hai' };
-  }
-  const locationName = loc.name || (await locationNameOf(db, s.locationId));
   return {
     ok: true,
     meta: {
       locationId: s.locationId,
-      locationName,
+      locationName: req.user.locationName || 'Khatushyamji',
       email: req.user.email,
-      role: req.user.role,
+      role: 'owner',
       name: req.user.name || '',
       userId: req.user.id || null,
     },
@@ -126,13 +105,13 @@ async function writeMeta(req, body) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-8' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-1' });
 });
 
 app.get('/api/health', async (_req, res) => {
   try {
     await getDb();
-    res.json({ ok: true, message: 'BSNL SIM API connected (MongoDB)' });
+    res.json({ ok: true, message: 'BSNL Khatushyamji API connected' });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -146,14 +125,6 @@ app.post('/api/login', async (req, res) => {
     const out = await login(await getDb(), req.body, req);
     if (out.status === 200) loginClear(req, email);
     send(res, out);
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/forgot-password', async (req, res) => {
-  try {
-    send(res, await forgotPassword(await getDb(), req.body));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -175,57 +146,9 @@ app.post('/api/me/password', requireUser, async (req, res) => {
   }
 });
 
-app.get('/api/locations/preview', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await previewLocation(await getDb(), req.query?.name || req.query?.q || ''));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/recycle', requireUser, async (req, res) => {
-  try {
-    send(res, await listDeleted(await getDb(), req.user, req.query));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/recycle/:type/:id/restore', requireUser, async (req, res) => {
-  try {
-    send(res, await restoreRow(await getDb(), req.user, req.params.type, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.delete('/api/recycle/:type/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await purgeRow(await getDb(), req.user, req.params.type, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
 app.get('/api/search', requireUser, async (req, res) => {
   try {
     send(res, await globalSearch(await getDb(), req.user, req.query?.q || req.query?.search || ''));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/notifications', requireUser, async (req, res) => {
-  try {
-    send(res, await listNotifications(await getDb(), req.user));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/system', requireUser, requireAdmin, async (_req, res) => {
-  try {
-    send(res, await systemHealth(await getDb()));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -236,7 +159,7 @@ app.post('/api/logout', requireUser, async (req, res) => {
     const { logActivity } = require('./lib/activity');
     await logActivity(await getDb(), {
       email: req.user.email,
-      role: req.user.role,
+      role: 'owner',
       name: req.user.name,
       action: 'logout',
       section: 'auth',
@@ -250,203 +173,21 @@ app.post('/api/logout', requireUser, async (req, res) => {
   }
 });
 
-app.get('/api/stock', requireUser, async (req, res) => {
-  try {
-    const w = await writeMeta(req, { locationId: req.query.locationId });
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await getStock(await getDb(), w.meta.locationId));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.put('/api/stock', requireUser, async (req, res) => {
-  try {
-    const w = await writeMeta(req, req.body);
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await saveStock(await getDb(), req.user, w.meta.locationId, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/closing', requireUser, async (req, res) => {
-  try {
-    const w = await writeMeta(req, { locationId: req.query.locationId });
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await listClosing(await getDb(), w.meta.locationId, req.query));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/closing', requireUser, async (req, res) => {
-  try {
-    const w = await writeMeta(req, req.body);
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await addClosing(await getDb(), req.user, w.meta.locationId, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/closing/:id/review', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await reviewClosing(await getDb(), req.user, req.params.id, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/today', requireUser, async (req, res) => {
-  try {
-    const w = await writeMeta(req, { locationId: req.query.locationId });
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    const stats = await todayStats(await getDb(), w.meta.locationId);
-    res.json({ ok: true, ...stats });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/import/:kind', requireUser, async (req, res) => {
-  try {
-    const kind = String(req.params.kind || '').toLowerCase();
-    if (!['sims', 'cbc', 'ctopup'].includes(kind)) {
-      return res.status(400).json({ ok: false, error: 'Invalid import type' });
-    }
-    const w = await writeMeta(req, req.body);
-    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
-    send(res, await importRows(await getDb(), w.meta, kind, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
 app.get('/api/me', requireUser, async (req, res) => {
   try {
     const db = await getDb();
     const user = await db.collection('users').findOne({ email: req.user.email });
     if (!user) return res.status(401).json({ ok: false, error: 'Login karo' });
-    if (user.status === 'inactive') return res.status(403).json({ ok: false, error: 'Account deactivate hai' });
-    res.json({ ok: true, user: publicUser(user), token: signToken(user) });
+    res.json({ ok: true, user: publicUser(user), token: signToken({ ...user, ...req.user }) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
 
-app.get('/api/locations', requireUser, async (req, res) => {
+app.get('/api/dashboard', requireUser, async (_req, res) => {
   try {
-    const rows = await listLocations(await getDb(), req.user);
-    res.json({ ok: true, rows });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/locations', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await addLocation(await getDb(), req.user, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.put('/api/locations/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await updateLocation(await getDb(), req.user, req.params.id, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.delete('/api/locations/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await deleteLocation(await getDb(), req.user, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/employees', requireUser, requireAdmin, async (req, res) => {
-  try {
-    const out = await listEmployees(await getDb(), req.query);
-    res.json({ ok: true, ...out });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/employees/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await employeeDetail(await getDb(), req.user, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/employees', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await addEmployee(await getDb(), req.user, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.put('/api/employees/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await updateEmployee(await getDb(), req.user, req.params.id, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.post('/api/employees/:id/reset-password', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await resetPassword(await getDb(), req.user, req.params.id, req.body));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.delete('/api/employees/:id', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await deleteEmployee(await getDb(), req.user, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/summary', requireUser, requireAdmin, async (_req, res) => {
-  try {
-    const summary = await adminSummary(await getDb());
-    res.json({ ok: true, ...summary });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/summary/location/:id', requireUser, async (req, res) => {
-  try {
-    send(res, await locationSummary(await getDb(), req.user, req.params.id));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/reports', requireUser, requireAdmin, async (req, res) => {
-  try {
-    send(res, await buildReport(await getDb(), req.user, req.query));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e.message || e) });
-  }
-});
-
-app.get('/api/activity', requireUser, async (req, res) => {
-  try {
-    const out = await listActivity(await getDb(), req.user, req.query);
-    if (out.error) return res.status(out.status || 400).json({ ok: false, error: out.error });
-    res.json({ ok: true, ...out });
+    const data = await ownerDashboard(await getDb());
+    res.json({ ok: true, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -465,7 +206,7 @@ app.get('/api/sims', requireUser, async (req, res) => {
 
 app.post('/api/sims', requireUser, async (req, res) => {
   try {
-    const w = await writeMeta(req, req.body);
+    const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await addSim(await getDb(), req.body, w.meta));
   } catch (e) {
@@ -475,7 +216,7 @@ app.post('/api/sims', requireUser, async (req, res) => {
 
 app.put('/api/sims/:id', requireUser, async (req, res) => {
   try {
-    const w = await writeMeta(req, req.body);
+    const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await updateSim(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
   } catch (e) {
@@ -485,7 +226,7 @@ app.put('/api/sims/:id', requireUser, async (req, res) => {
 
 app.delete('/api/sims/:id', requireUser, async (req, res) => {
   try {
-    const w = await writeMeta(req, { locationId: req.query.locationId });
+    const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await deleteSim(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
   } catch (e) {
@@ -506,7 +247,7 @@ function mountCrud(prefix, api) {
   });
   app.post(prefix, requireUser, async (req, res) => {
     try {
-      const w = await writeMeta(req, req.body);
+      const w = writeMeta(req);
       if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
       send(res, await api.add(await getDb(), req.body, w.meta));
     } catch (e) {
@@ -515,7 +256,7 @@ function mountCrud(prefix, api) {
   });
   app.put(`${prefix}/:id`, requireUser, async (req, res) => {
     try {
-      const w = await writeMeta(req, req.body);
+      const w = writeMeta(req);
       if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
       send(res, await api.update(await getDb(), req.params.id, req.body, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
     } catch (e) {
@@ -524,7 +265,7 @@ function mountCrud(prefix, api) {
   });
   app.delete(`${prefix}/:id`, requireUser, async (req, res) => {
     try {
-      const w = await writeMeta(req, { locationId: req.query.locationId });
+      const w = writeMeta(req);
       if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
       send(res, await api.remove(await getDb(), req.params.id, w.meta, (row) => assertRowLocation(req, row, w.meta.locationId)));
     } catch (e) {
@@ -543,10 +284,7 @@ if (fs.existsSync(WEB_DIR)) {
   });
 } else {
   app.get('/', (_req, res) => {
-    res.json({
-      ok: true,
-      message: 'BSNL SIM API (MongoDB). Flutter UI: ../bsnl_sim_portal',
-    });
+    res.json({ ok: true, message: 'BSNL Khatushyamji API' });
   });
 }
 
@@ -555,15 +293,12 @@ async function start() {
     const db = await getDb();
     await seedUsers(db);
     await ensureIndexes(db);
-    console.log('Users, locations, indexes ready');
+    console.log('Owner account and Khatushyamji location ready');
   } catch (e) {
     console.warn('Startup seed/index skip:', String(e.message || e));
   }
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`BSNL SIM API  http://localhost:${PORT}  (MongoDB)`);
-    if (!process.env.MONGODB_URI) {
-      console.warn('WARNING: MONGODB_URI set nahi hai. backend/.env dekho.');
-    }
+    console.log(`BSNL Khatushyamji API  http://localhost:${PORT}`);
   });
 }
 

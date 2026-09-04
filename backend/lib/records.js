@@ -103,8 +103,6 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         if (from) q.date.$gte = from;
         if (to) q.date.$lte = to;
       }
-      const employee = String(scope.employee || '').trim().toLowerCase();
-      if (employee) q.createdBy = employee;
       const status = String(scope.status || '').trim();
       if (status) q.status = status;
       const page = Math.max(1, Number(scope.page) || 1);

@@ -32,7 +32,7 @@ class SimStore extends ChangeNotifier {
   }
 
   List<SimEntry> get filtered {
-    final loc = auth.isAdmin ? locationId ?? auth.effectiveLocationId : auth.effectiveLocationId;
+    final loc = auth.effectiveLocationId;
     final q = search.trim().toLowerCase();
     return entries.where((e) {
       if (loc != null && e.locationId != null && e.locationId != loc) return false;
@@ -61,10 +61,7 @@ class SimStore extends ChangeNotifier {
     return entries.map((e) => e.sno).fold<int>(0, (a, b) => a > b ? a : b) + 1;
   }
 
-  int? get _queryLocationId {
-    if (auth.isAdmin) return locationId ?? auth.effectiveLocationId;
-    return auth.effectiveLocationId;
-  }
+  int? get _queryLocationId => auth.effectiveLocationId;
 
   Future<void> load() async {
     loading = true;
@@ -76,19 +73,13 @@ class SimStore extends ChangeNotifier {
     try {
       if (useApi) {
         final loc = _queryLocationId;
-        if (auth.isAdmin && loc == null) {
-          entries = [];
-          connected = true;
-          statusMessage = 'Pehle jagah choose karo — har jagah ka Portal alag hai';
-        } else {
-          entries = await _api.list(apiBase, locationId: loc);
-          if (loc != null) {
-            entries = [for (final e in entries) if (e.locationId == null || e.locationId == loc) e];
-          }
-          connected = true;
-          final host = apiBase.isEmpty ? 'is site' : apiBase;
-          statusMessage = 'Server ($host) se ${entries.length} entries';
+        entries = await _api.list(apiBase, locationId: loc);
+        if (loc != null) {
+          entries = [for (final e in entries) if (e.locationId == null || e.locationId == loc) e];
         }
+        connected = true;
+        final host = apiBase.isEmpty ? 'is site' : apiBase;
+        statusMessage = 'Server ($host) se ${entries.length} entries';
       } else {
         connected = false;
         await _loadLocal(prefs);
