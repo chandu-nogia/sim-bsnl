@@ -17,6 +17,28 @@ function authSecret() {
   return raw || 'dev-only-change-AUTH_SECRET';
 }
 
+function emailRx(email) {
+  const escaped = String(email || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+async function findUserByEmail(db, email) {
+  const exact = String(email || '').trim().toLowerCase();
+  if (!exact) return null;
+  return db.collection('users').findOne({
+    $or: [{ email: exact }, { email: emailRx(exact) }],
+  });
+}
+
+function passwordOk(user, password) {
+  if (!user || !user.passwordHash) return false;
+  try {
+    return bcrypt.compareSync(String(password || ''), user.passwordHash);
+  } catch {
+    return false;
+  }
+}
+
 function assignedOf(user) {
   if (!user) return [];
   const fromArr = Array.isArray(user.assignedLocations)
@@ -77,7 +99,7 @@ async function seedUsers(db) {
 
   const users = db.collection('users');
   const locId = Number(khatu.id);
-  const existing = await users.findOne({ email: OWNER_EMAIL });
+  const existing = await findUserByEmail(db, OWNER_EMAIL);
   if (!existing) {
     const empId = await nextId(db, 'users');
     await users.insertOne({
@@ -92,20 +114,24 @@ async function seedUsers(db) {
       status: 'active',
       createdAt: now,
       updatedAt: now,
+      loginFixedKhatu1: true,
     });
   } else {
-    await users.updateOne(
-      { email: OWNER_EMAIL },
-      {
-        $set: {
-          role: 'owner',
-          status: 'active',
-          locationId: Number(existing.locationId) || locId,
-          assignedLocations: [Number(existing.locationId) || locId],
-          locationName: existing.locationName || khatu.name,
-        },
-      },
-    );
+    const patch = {
+      email: OWNER_EMAIL,
+      role: 'owner',
+      status: 'active',
+      locationId: Number(existing.locationId) || locId,
+      assignedLocations: [Number(existing.locationId) || locId],
+      locationName: existing.locationName || khatu.name,
+    };
+    if (!existing.loginFixedKhatu1) {
+      if (!passwordOk(existing, OWNER_PASSWORD)) {
+        patch.passwordHash = bcrypt.hashSync(OWNER_PASSWORD, 10);
+      }
+      patch.loginFixedKhatu1 = true;
+    }
+    await users.updateOne({ _id: existing._id }, { $set: patch });
   }
 
   for (const col of ['sims', 'cbc', 'ctopup']) {
@@ -161,8 +187,8 @@ async function login(db, body, req) {
   if (!email || !password) {
     return { status: 400, json: { ok: false, error: 'Email aur password likho' } };
   }
-  const user = await db.collection('users').findOne({ email });
-  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+  const user = await findUserByEmail(db, email);
+  if (!user || !passwordOk(user, password)) {
     await logActivity(db, {
       email,
       role: user?.role || '',
@@ -218,7 +244,7 @@ async function requireUser(req, res, next) {
   }
   try {
     const db = await getDb();
-    const row = await db.collection('users').findOne({ email: tokenUser.email });
+    const row = await findUserByEmail(db, tokenUser.email);
     if (!row) {
       return res.status(401).json({ ok: false, error: 'Login karo' });
     }
