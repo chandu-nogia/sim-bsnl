@@ -137,7 +137,7 @@ class _RecordsPageState extends State<RecordsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete?'),
-        content: Text('${row['name'] ?? id} delete ho jayegi.'),
+        content: Text('${row['name'] ?? id} recycle bin mein chali jayegi (30 din).'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -163,6 +163,61 @@ class _RecordsPageState extends State<RecordsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
+    }
+  }
+
+  String get _importKind => widget.path.contains('cbc') ? 'cbc' : 'ctopup';
+
+  Future<void> _importCsv() async {
+    final ctrl = TextEditingController();
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import CSV'),
+        content: SizedBox(
+          width: 480,
+          child: TextField(
+            controller: ctrl,
+            maxLines: 10,
+            decoration: const InputDecoration(
+              hintText: 'Header row + data. Example:\ndate,name,mobile,amount,transactionId',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Import')),
+        ],
+      ),
+    );
+    if (raw == null || raw.trim().isEmpty || !mounted) return;
+    final lines = raw.trim().split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
+    if (lines.length < 2) return;
+    final headers = lines.first.split(',').map((s) => s.trim()).toList();
+    final rows = <Map<String, dynamic>>[];
+    for (final line in lines.skip(1)) {
+      final cells = line.split(',');
+      final m = <String, dynamic>{};
+      for (var i = 0; i < headers.length && i < cells.length; i++) {
+        m[headers[i]] = cells[i].trim();
+      }
+      rows.add(m);
+    }
+    try {
+      final out = await widget.auth.api.importRows(
+        widget.auth.apiBase,
+        _importKind,
+        rows,
+        locationId: _scopeLocationId,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Imported ${out['added'] ?? 0}, failed ${out['failed'] ?? 0}')),
+        );
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -195,6 +250,11 @@ class _RecordsPageState extends State<RecordsPage> {
               : '${widget.title}  •  ${widget.locationName}',
         ),
         actions: [
+          IconButton(
+            tooltip: 'Import CSV',
+            onPressed: canWrite ? _importCsv : null,
+            icon: const Icon(Icons.upload_file_outlined),
+          ),
           IconButton(
             tooltip: 'Download colorful PDF',
             onPressed: _loading || _rows.isEmpty ? null : () => _pdf(share: false),

@@ -5,8 +5,11 @@ import 'package:http/http.dart' as http;
 import '../models/sim_entry.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message);
+  ApiException(this.message, {this.needsCreate = false, this.locationName = '', this.duplicate = false});
   final String message;
+  final bool needsCreate;
+  final String locationName;
+  final bool duplicate;
   @override
   String toString() => message;
 }
@@ -58,7 +61,12 @@ class ApiService {
       try {
         final json = jsonDecode(res.body);
         if (json is Map && json['error'] != null) {
-          throw ApiException('${json['error']}');
+          throw ApiException(
+            '${json['error']}',
+            needsCreate: json['needsCreate'] == true,
+            locationName: '${json['locationName'] ?? ''}',
+            duplicate: json['duplicate'] == true,
+          );
         }
       } catch (e) {
         if (e is ApiException) rethrow;
@@ -316,6 +324,7 @@ class ApiService {
     List<int> assignedLocations = const [],
     String location = '',
     String status = 'active',
+    bool createLocation = false,
   }) async {
     final body = {
       'name': name,
@@ -324,6 +333,7 @@ class ApiService {
       if (assignedLocations.isNotEmpty) 'locationId': assignedLocations.first,
       if (location.trim().isNotEmpty) 'location': location.trim(),
       if (location.trim().isNotEmpty) 'locationName': location.trim(),
+      'createLocation': createLocation,
       'status': status,
       if (password.isNotEmpty) 'password': password,
     };
@@ -435,5 +445,132 @@ class ApiService {
     final json = await activityPage(base, limit: 40);
     final rows = (json['rows'] as List?) ?? [];
     return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+  }
+
+  Future<String> forgotPassword(String base, String email) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/forgot-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email.trim()}),
+      ),
+    );
+    return '${json['message'] ?? 'Request bhej di'}';
+  }
+
+  Future<void> updateProfile(String base, String name) async {
+    final json = await _send(
+      http.put(_uri(base, '/api/me'), headers: _headers(), body: jsonEncode({'name': name})),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Profile update fail'}');
+  }
+
+  Future<void> changePassword(String base, String current, String next) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/me/password'),
+        headers: _headers(),
+        body: jsonEncode({'current': current, 'next': next}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Password change fail'}');
+  }
+
+  Future<List<Map<String, dynamic>>> recycle(String base, {int? locationId}) async {
+    final json = await _send(
+      http.get(
+        _uri(base, _withQuery('/api/recycle', {'locationId': locationId?.toString()})),
+        headers: _headers(locationId: locationId),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Recycle fail'}');
+    final rows = (json['rows'] as List?) ?? [];
+    return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+  }
+
+  Future<void> restoreRecycle(String base, String type, int id) async {
+    final json = await _send(
+      http.post(_uri(base, '/api/recycle/$type/$id/restore'), headers: _headers()),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Restore fail'}');
+  }
+
+  Future<Map<String, dynamic>> stock(String base, {int? locationId}) async {
+    final json = await _send(
+      http.get(
+        _uri(base, _withQuery('/api/stock', {'locationId': locationId?.toString()})),
+        headers: _headers(locationId: locationId),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Stock fail'}');
+    return json['stock'] is Map ? Map<String, dynamic>.from(json['stock'] as Map) : json;
+  }
+
+  Future<void> saveStock(String base, {required int qty, int lowAt = 20, String note = '', int? locationId}) async {
+    final json = await _send(
+      http.put(
+        _uri(base, '/api/stock'),
+        headers: _headers(locationId: locationId),
+        body: jsonEncode({'qty': qty, 'lowAt': lowAt, 'note': note, 'locationId': ?locationId}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Stock save fail'}');
+  }
+
+  Future<List<Map<String, dynamic>>> closing(String base, {int? locationId}) async {
+    final json = await _send(
+      http.get(
+        _uri(base, _withQuery('/api/closing', {'locationId': locationId?.toString()})),
+        headers: _headers(locationId: locationId),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Closing fail'}');
+    final rows = (json['rows'] as List?) ?? [];
+    return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+  }
+
+  Future<void> submitClosing(String base, Map<String, dynamic> body, {int? locationId}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/closing'),
+        headers: _headers(locationId: locationId),
+        body: jsonEncode({...body, 'locationId': ?locationId}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Closing fail'}');
+  }
+
+  Future<void> reviewClosing(String base, int id, String status) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/closing/$id/review'),
+        headers: _headers(),
+        body: jsonEncode({'status': status}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Review fail'}');
+  }
+
+  Future<Map<String, dynamic>> today(String base, {int? locationId}) async {
+    final json = await _send(
+      http.get(
+        _uri(base, _withQuery('/api/today', {'locationId': locationId?.toString()})),
+        headers: _headers(locationId: locationId),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Today fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> importRows(String base, String kind, List<Map<String, dynamic>> rows, {int? locationId}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/import/$kind'),
+        headers: _headers(locationId: locationId),
+        body: jsonEncode({'rows': rows, 'locationId': ?locationId}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Import fail'}');
+    return json;
   }
 }

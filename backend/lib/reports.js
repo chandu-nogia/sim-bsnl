@@ -3,6 +3,7 @@
 const { money } = require('./summary');
 const { assignedIds, mongoListQuery } = require('./rbac');
 const { publicActivity } = require('./activity');
+const { withAlive } = require('./alive');
 
 function inRange(iso, from, to) {
   const d = String(iso || '').slice(0, 10);
@@ -33,7 +34,7 @@ async function buildReport(db, user, query) {
     if (locFilter) scope.locationId = locFilter;
     else scope.locationIds = ids;
   }
-  const q = mongoListQuery(scope);
+  const q = withAlive(mongoListQuery(scope));
   const [locations, employees, sims, cbc, ctopup, activity] = await Promise.all([
     db.collection('locations').find(ids === null ? {} : { id: { $in: ids } }).toArray(),
     db.collection('users').find({ role: 'employee' }).toArray(),

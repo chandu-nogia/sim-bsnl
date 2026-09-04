@@ -4,6 +4,8 @@ const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
 const { locationMatchQuery } = require('./location_resolve');
+const { withAlive } = require('./alive');
+const { moneyNumber } = require('./password');
 
 function publicCbc(row) {
   const id = Number(row.id);
@@ -17,7 +19,9 @@ function publicCbc(row) {
     mobile: row.mobile || '',
     landline: row.landline || '',
     amount: row.amount || '',
+    amountNum: moneyNumber(row.amountNum ?? row.amount),
     transactionId: row.transactionId || '',
+    note: row.note || '',
     createdBy: row.createdBy || '',
     employeeId: row.employeeId ? Number(row.employeeId) : null,
     createdAt: row.createdAt || '',
@@ -33,7 +37,9 @@ function pickCbc(body) {
     mobile: String(b.mobile ?? '').trim(),
     landline: String(b.landline ?? '').trim(),
     amount: String(b.amount ?? '').trim(),
+    amountNum: moneyNumber(b.amount),
     transactionId: String(b.transactionId ?? b.txnId ?? '').trim(),
+    note: String(b.note ?? b.remarks ?? '').trim(),
   };
 }
 
@@ -60,6 +66,8 @@ function publicCtopup(row) {
     amount: row.amount || '',
     status: row.status || 'Pending',
     transactionId: row.transactionId || '',
+    note: row.note || '',
+    amountNum: moneyNumber(row.amountNum ?? row.amount),
     createdBy: row.createdBy || '',
     employeeId: row.employeeId ? Number(row.employeeId) : null,
     createdAt: row.createdAt || '',
@@ -74,8 +82,10 @@ function pickCtopup(body) {
     name: String(b.name ?? '').trim(),
     number: String(b.number ?? b.mobile ?? '').trim(),
     amount: String(b.amount ?? '').trim(),
+    amountNum: moneyNumber(b.amount),
     status: String(b.status ?? b.paymentStatus ?? 'Pending').trim() || 'Pending',
     transactionId: String(b.transactionId ?? b.txnId ?? b.reference ?? '').trim(),
+    note: String(b.note ?? b.remarks ?? '').trim(),
   };
 }
 
@@ -94,8 +104,8 @@ function actorLabel(meta) {
 function makeCrud(collection, pick, validate, toPublic, section) {
   return {
     async list(db, scope = {}) {
-      let q = mongoListQuery(scope);
-      q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId'], scope.q);
+      let q = withAlive(mongoListQuery(scope));
+      q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId', 'note'], scope.q);
       const from = String(scope.from || '').slice(0, 10);
       const to = String(scope.to || '').slice(0, 10);
       if (from || to) {
@@ -110,15 +120,25 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const skip = (page - 1) * limit;
       const col = db.collection(collection);
       const total = await col.countDocuments(q);
-      let rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
-      const locId = Number(scope.locationId);
-      if (locId) rows = rows.filter((r) => Number(r.locationId) === locId);
-      return { rows: rows.map(toPublic), total: locId ? rows.length : total, page, limit };
+      const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+      return { rows: rows.map(toPublic), total, page, limit };
     },
     async add(db, body, meta) {
       const row = pick(body);
       const err = validate(row);
       if (err) return { status: 400, json: { ok: false, error: err } };
+      if (row.transactionId && body?.force !== true) {
+        const dup = await db.collection(collection).findOne(withAlive({
+          locationId: Number(meta.locationId),
+          transactionId: row.transactionId,
+        }));
+        if (dup) {
+          return {
+            status: 409,
+            json: { ok: false, error: 'Is location mein ye Transaction ID pehle se hai', duplicate: true },
+          };
+        }
+      }
       const id = await nextId(db, collection);
       const now = new Date().toISOString();
       const saved = {
@@ -189,7 +209,10 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
-      await db.collection(collection).deleteOne({ _id: existing._id });
+      await db.collection(collection).updateOne(
+        { _id: existing._id },
+        { $set: { deletedAt: new Date().toISOString(), deletedBy: meta.email || '', updatedAt: new Date().toISOString() } },
+      );
       await logActivity(db, {
         email: meta.email,
         role: meta.role,

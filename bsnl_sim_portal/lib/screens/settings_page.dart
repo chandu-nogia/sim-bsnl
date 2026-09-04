@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
@@ -121,55 +122,51 @@ class _SettingsPageState extends State<SettingsPage> {
                     'DB: MongoDB Atlas\n\n'
                     'API: https://bsnl-sim-api.onrender.com',
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    '4. API URL',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: BsnlColors.navy,
-                        ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _url,
-                    decoration: const InputDecoration(
-                      labelText: 'API URL',
-                      hintText: 'http://localhost:5050  ya  https://bsnl-sim-api.onrender.com',
+                  if (!kReleaseMode) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      '4. API URL (dev only)',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: BsnlColors.navy,
+                          ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: _save,
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save & load'),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _url,
+                      decoration: const InputDecoration(
+                        labelText: 'API URL',
+                        hintText: 'http://localhost:5050  ya  https://bsnl-sim-api.onrender.com',
                       ),
-                      OutlinedButton.icon(
-                        onPressed: _testing ? null : _test,
-                        icon: _testing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.wifi_tethering),
-                        label: const Text('Test connection'),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          await widget.store.disconnect();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Local mode')),
-                          );
-                        },
-                        child: const Text('Disconnect'),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _save,
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save & load'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _testing ? null : _test,
+                          icon: _testing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.wifi_tethering),
+                          label: const Text('Test connection'),
+                        ),
+                      ],
+                    ),
+                  ] else
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Text('Live app Render API use karti hai. URL yahan se change nahi hota.'),
+                    ),
                   if (_testMsg != null) ...[
                     const SizedBox(height: 12),
                     Text(
@@ -191,7 +188,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Text(
                 'Data MongoDB Atlas collection "sims" mein jata hai. '
                 'Flutter web Vercel par hai, API Render par. '
-                'Release build Render API URL use karti hai; yahan override bhi kar sakte ho.',
+                'Release build Render API URL use karti hai.',
               ),
             ),
           ),

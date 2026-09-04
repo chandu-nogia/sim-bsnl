@@ -71,6 +71,7 @@ async function findOrCreateLocation(db, rawName) {
     id,
     name,
     code,
+    nameKey: nameKey(name),
     address: '',
     status: 'active',
     createdAt: now,
@@ -94,13 +95,45 @@ async function resolveEmployeeLocation(db, body, fallback) {
     if (loc) return { location: loc };
   }
   const typed = normalizeName(body?.location || body?.locationName || '');
-  if (typed) return findOrCreateLocation(db, typed);
+  const allowCreate = body?.createLocation === true || body?.createLocation === 'true';
+  if (typed) {
+    const existing = await findLocationByName(db, typed);
+    if (existing) return { location: existing };
+    if (!allowCreate) {
+      return {
+        needsCreate: true,
+        name: displayName(typed),
+        error: `Location "${displayName(typed)}" nahi mili. Confirm karke nayi location banao.`,
+      };
+    }
+    return findOrCreateLocation(db, typed);
+  }
   if (fallback && fallback.locationId) {
     const loc = await db.collection('locations').findOne({ id: Number(fallback.locationId) });
     if (loc) return { location: loc };
   }
-  if (fallback && fallback.locationName) return findOrCreateLocation(db, fallback.locationName);
+  if (fallback && fallback.locationName) {
+    const existing = await findLocationByName(db, fallback.locationName);
+    if (existing) return { location: existing };
+  }
   return { error: 'Location likho' };
+}
+
+async function previewLocation(db, rawName) {
+  const name = displayName(rawName);
+  if (!name) return { status: 400, json: { ok: false, error: 'Location likho' } };
+  const existing = await findLocationByName(db, name);
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      exists: Boolean(existing),
+      name,
+      location: existing
+        ? { id: Number(existing.id), name: existing.name, status: existing.status || 'active' }
+        : null,
+    },
+  };
 }
 
 async function repairEmployeeLocations(db) {
@@ -144,4 +177,5 @@ module.exports = {
   findOrCreateLocation,
   resolveEmployeeLocation,
   repairEmployeeLocations,
+  previewLocation,
 };

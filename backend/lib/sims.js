@@ -4,6 +4,7 @@ const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
 const { locationMatchQuery } = require('./location_resolve');
+const { withAlive } = require('./alive');
 
 function publicRow(row) {
   const id = Number(row.id);
@@ -26,6 +27,7 @@ function publicRow(row) {
     employeeId: row.employeeId ? Number(row.employeeId) : null,
     createdAt: row.createdAt || '',
     updatedAt: row.updatedAt || '',
+    note: row.note || '',
   };
 }
 
@@ -47,6 +49,7 @@ function pickBody(body) {
     sim,
     last6,
     status: String(b.status ?? 'Issued').trim() || 'Issued',
+    note: String(b.note ?? b.remarks ?? '').trim(),
   };
 }
 
@@ -60,8 +63,8 @@ function validate(row) {
 }
 
 async function listSims(db, scope = {}) {
-  let q = mongoListQuery(scope);
-  q = applyTextSearch(q, ['name', 'mobile', 'sim', 'last6'], scope.q);
+  let q = withAlive(mongoListQuery(scope));
+  q = applyTextSearch(q, ['name', 'mobile', 'sim', 'last6', 'note'], scope.q);
   const from = String(scope.from || '').slice(0, 10);
   const to = String(scope.to || '').slice(0, 10);
   if (from || to) {
@@ -74,16 +77,25 @@ async function listSims(db, scope = {}) {
   const skip = (page - 1) * limit;
   const col = db.collection('sims');
   const total = await col.countDocuments(q);
-  let rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
-  const locId = Number(scope.locationId);
-  if (locId) rows = rows.filter((r) => Number(r.locationId) === locId);
-  return { rows: rows.map(publicRow), total: locId ? rows.length : total, page, limit };
+  const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+  return { rows: rows.map(publicRow), total, page, limit };
 }
 
 async function addSim(db, body, meta) {
   const row = pickBody(body);
   const err = validate(row);
   if (err) return { status: 400, json: { ok: false, error: err } };
+  const locId = Number(meta.locationId);
+  const dup = await db.collection('sims').findOne(withAlive({
+    locationId: locId,
+    $or: [{ mobile: row.mobile }, { sim: row.sim }],
+  }));
+  if (dup && body?.force !== true) {
+    return {
+      status: 409,
+      json: { ok: false, error: 'Is location mein ye mobile/SIM pehle se hai', duplicate: true },
+    };
+  }
   if (!row.sno) {
     const q = { locationId: Number(meta.locationId) };
     const last = await db.collection('sims').find(q).sort({ sno: -1 }).limit(1).next();
@@ -102,6 +114,10 @@ async function addSim(db, body, meta) {
     updatedAt: now,
   };
   await db.collection('sims').insertOne(saved);
+  await db.collection('stock').updateOne(
+    { locationId: Number(meta.locationId), qty: { $gt: 0 } },
+    { $inc: { qty: -1 }, $set: { updatedAt: now } },
+  );
   await logActivity(db, {
     email: meta.email,
     role: meta.role,
@@ -160,7 +176,10 @@ async function deleteSim(db, idRaw, meta, assertRow) {
   if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
   const blocked = await assertRow(existing);
   if (blocked) return blocked;
-  await db.collection('sims').deleteOne({ _id: existing._id });
+  await db.collection('sims').updateOne(
+    { _id: existing._id },
+    { $set: { deletedAt: new Date().toISOString(), deletedBy: meta.email || '', updatedAt: new Date().toISOString() } },
+  );
   await logActivity(db, {
     email: meta.email,
     role: meta.role,

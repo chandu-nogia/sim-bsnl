@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
+import '../services/api_service.dart';
 import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
@@ -74,7 +75,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
         ],
       ),
     );
-    if (pw == null || pw.length < 4) return;
+    if (pw == null || pw.length < 8) return;
     try {
       await widget.auth.api.resetEmployeePassword(widget.auth.apiBase, '${row['email']}', pw);
       if (mounted) {
@@ -286,7 +287,7 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool createLocation = false}) async {
     if (_location.text.trim().isEmpty) {
       setState(() => _error = 'Location likho');
       return;
@@ -304,9 +305,28 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
         password: _password.text.trim(),
         location: _location.text.trim(),
         status: _status,
+        createLocation: createLocation,
       );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
+      if (e is ApiException && e.needsCreate) {
+        if (!mounted) return;
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Nayi location?'),
+            content: Text('"${e.locationName.isEmpty ? _location.text.trim() : e.locationName}" abhi nahi hai. Nayi location bana ke employee assign karein?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create location')),
+            ],
+          ),
+        );
+        if (ok == true) {
+          await _save(createLocation: true);
+          return;
+        }
+      }
       setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -332,7 +352,7 @@ class _EmployeeFormPageState extends State<EmployeeFormPage> {
             TextField(
               controller: _password,
               obscureText: true,
-              decoration: InputDecoration(labelText: _editing ? 'New password (optional)' : 'Password'),
+              decoration: InputDecoration(labelText: _editing ? 'New password (optional, 8+ chars)' : 'Password (8+ chars)'),
             ),
             const SizedBox(height: 12),
             TextField(

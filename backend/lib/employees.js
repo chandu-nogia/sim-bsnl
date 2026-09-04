@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { resolveEmployeeLocation } = require('./location_resolve');
+const { validatePassword } = require('./password');
 
 function asIds(v) {
   if (!Array.isArray(v)) return [];
@@ -53,10 +54,19 @@ async function addEmployee(db, actor, body) {
   const status = body?.status === 'inactive' ? 'inactive' : 'active';
   if (!name) return { status: 400, json: { ok: false, error: 'Naam likho' } };
   if (!email || !email.includes('@')) return { status: 400, json: { ok: false, error: 'Email likho' } };
-  if (password.length < 4) return { status: 400, json: { ok: false, error: 'Password kam se kam 4 character' } };
+  const pwErr = validatePassword(password);
+  if (pwErr) return { status: 400, json: { ok: false, error: pwErr } };
   const resolved = await resolveEmployeeLocation(db, body);
   if (resolved.error || !resolved.location) {
-    return { status: 400, json: { ok: false, error: resolved.error || 'Location likho' } };
+    return {
+      status: 400,
+      json: {
+        ok: false,
+        error: resolved.error || 'Location likho',
+        needsCreate: Boolean(resolved.needsCreate),
+        locationName: resolved.name || '',
+      },
+    };
   }
   const exists = await db.collection('users').findOne({ email });
   if (exists) return { status: 400, json: { ok: false, error: 'Ye email pehle se hai' } };
@@ -115,7 +125,15 @@ async function updateEmployee(db, actor, idRaw, body) {
   if (user.role === 'employee' && hasLocInput) {
     const resolved = await resolveEmployeeLocation(db, body, user);
     if (resolved.error || !resolved.location) {
-      return { status: 400, json: { ok: false, error: resolved.error || 'Location likho' } };
+      return {
+        status: 400,
+        json: {
+          ok: false,
+          error: resolved.error || 'Location likho',
+          needsCreate: Boolean(resolved.needsCreate),
+          locationName: resolved.name || '',
+        },
+      };
     }
     assigned = [Number(resolved.location.id)];
     locationId = Number(resolved.location.id);
@@ -137,7 +155,9 @@ async function updateEmployee(db, actor, idRaw, body) {
     locationName: user.role === 'admin' ? '' : locationName,
     updatedAt: new Date().toISOString(),
   };
-  if (String(body?.password || '').length >= 4) {
+  if (String(body?.password || '')) {
+    const updErr = validatePassword(body.password);
+    if (updErr) return { status: 400, json: { ok: false, error: updErr } };
     set.passwordHash = bcrypt.hashSync(String(body.password), 10);
   }
   await db.collection('users').updateOne({ email: user.email }, { $set: set });
@@ -157,7 +177,8 @@ async function updateEmployee(db, actor, idRaw, body) {
 
 async function resetPassword(db, actor, idRaw, body) {
   const password = String(body?.password ?? '');
-  if (password.length < 4) return { status: 400, json: { ok: false, error: 'Naya password kam se kam 4 character' } };
+  const resetErr = validatePassword(password);
+  if (resetErr) return { status: 400, json: { ok: false, error: resetErr } };
   const emailKey = String(idRaw || '').trim().toLowerCase();
   const user = await db.collection('users').findOne({
     $or: [{ email: emailKey }, { id: Number.parseInt(emailKey, 10) || -1 }],

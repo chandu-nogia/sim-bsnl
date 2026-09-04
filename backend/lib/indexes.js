@@ -8,15 +8,20 @@ async function ensureIndexes(db) {
     db.collection('locations').createIndex({ id: 1 }, { unique: true }),
     db.collection('locations').createIndex({ code: 1 }),
     db.collection('locations').createIndex({ status: 1 }),
+    db.collection('locations').createIndex({ nameKey: 1 }),
+    db.collection('stock').createIndex({ locationId: 1 }, { unique: true }),
+    db.collection('closing').createIndex({ locationId: 1, date: -1 }),
   ];
   for (const col of ['sims', 'cbc', 'ctopup']) {
     jobs.push(db.collection(col).createIndex({ locationId: 1, id: 1 }));
     jobs.push(db.collection(col).createIndex({ createdAt: 1 }));
     jobs.push(db.collection(col).createIndex({ employeeId: 1 }));
     jobs.push(db.collection(col).createIndex({ createdBy: 1 }));
+    jobs.push(db.collection(col).createIndex({ locationId: 1, deletedAt: 1 }));
+    jobs.push(db.collection(col).createIndex({ locationId: 1, mobile: 1 }));
   }
-  jobs.push(db.collection('cbc').createIndex({ transactionId: 1 }));
-  jobs.push(db.collection('ctopup').createIndex({ transactionId: 1 }));
+  jobs.push(db.collection('cbc').createIndex({ locationId: 1, transactionId: 1 }));
+  jobs.push(db.collection('ctopup').createIndex({ locationId: 1, transactionId: 1 }));
   jobs.push(db.collection('activity').createIndex({ at: -1 }));
   jobs.push(db.collection('activity').createIndex({ locationId: 1, at: -1 }));
   jobs.push(db.collection('activity').createIndex({ email: 1, at: -1 }));

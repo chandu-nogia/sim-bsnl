@@ -6,7 +6,7 @@ const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const rbac = require('./rbac');
 const { getDb } = require('./db');
-const { repairEmployeeLocations } = require('./location_resolve');
+const { repairEmployeeLocations, nameKey } = require('./location_resolve');
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'chandu@gmail.com').trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'chandu@khatu20';
@@ -16,7 +16,12 @@ const DEFAULT_LOCATION = process.env.DEFAULT_LOCATION_NAME || 'Khatu Shyam Ji';
 const OLD_KHATU_EMAILS = ['csckhatu@gmail.com'];
 
 function authSecret() {
-  return process.env.AUTH_SECRET || 'bsnl-sim-portal-change-me';
+  const raw = String(process.env.AUTH_SECRET || '').trim();
+  if (raw && raw !== 'bsnl-sim-portal-change-me' && raw.length >= 16) return raw;
+  if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+    console.warn('AUTH_SECRET missing or weak. Set a 16+ character secret on Render.');
+  }
+  return raw || 'dev-only-change-AUTH_SECRET';
 }
 
 function assignedOf(user) {
@@ -107,27 +112,35 @@ async function seedUsers(db) {
   }
 
   const users = db.collection('users');
-  let adminId = (await users.findOne({ email: ADMIN_EMAIL }))?.id;
-  if (!adminId) adminId = await nextId(db, 'users');
-  await users.updateOne(
-    { email: ADMIN_EMAIL },
-    {
-      $set: {
-        id: adminId,
-        email: ADMIN_EMAIL,
-        passwordHash: bcrypt.hashSync(ADMIN_PASSWORD, 10),
-        role: 'admin',
-        name: 'Admin',
-        locationId: null,
-        locationName: '',
-        assignedLocations: [],
-        status: 'active',
-        updatedAt: now,
+  const existingAdmin = await users.findOne({ email: ADMIN_EMAIL });
+  if (!existingAdmin) {
+    const adminId = await nextId(db, 'users');
+    await users.insertOne({
+      id: adminId,
+      email: ADMIN_EMAIL,
+      passwordHash: bcrypt.hashSync(ADMIN_PASSWORD, 10),
+      role: 'admin',
+      name: 'Admin',
+      locationId: null,
+      locationName: '',
+      assignedLocations: [],
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await users.updateOne(
+      { email: ADMIN_EMAIL },
+      {
+        $set: {
+          role: 'admin',
+          status: existingAdmin.status === 'inactive' ? 'inactive' : 'active',
+          locationId: null,
+          assignedLocations: [],
+        },
       },
-      $setOnInsert: { createdAt: now },
-    },
-    { upsert: true },
-  );
+    );
+  }
 
   await users.deleteMany({
     email: { $in: OLD_KHATU_EMAILS },
@@ -135,27 +148,36 @@ async function seedUsers(db) {
   });
 
   const locId = Number(khatu.id);
-  let empId = (await users.findOne({ email: EMPLOYEE_EMAIL }))?.id;
-  if (!empId) empId = await nextId(db, 'users');
-  await users.updateOne(
-    { email: EMPLOYEE_EMAIL },
-    {
-      $set: {
-        id: empId,
-        email: EMPLOYEE_EMAIL,
-        passwordHash: bcrypt.hashSync(EMPLOYEE_PASSWORD, 10),
-        role: 'employee',
-        name: 'Khatu Employee',
-        locationId: locId,
-        locationName: khatu.name,
-        assignedLocations: [locId],
-        status: 'active',
-        updatedAt: now,
+  const existingEmp = await users.findOne({ email: EMPLOYEE_EMAIL });
+  if (!existingEmp) {
+    const empId = await nextId(db, 'users');
+    await users.insertOne({
+      id: empId,
+      email: EMPLOYEE_EMAIL,
+      passwordHash: bcrypt.hashSync(EMPLOYEE_PASSWORD, 10),
+      role: 'employee',
+      name: 'Khatu Employee',
+      locationId: locId,
+      locationName: khatu.name,
+      assignedLocations: [locId],
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+  } else if (existingEmp.role === 'employee') {
+    await users.updateOne(
+      { email: EMPLOYEE_EMAIL },
+      {
+        $set: {
+          locationId: Number(existingEmp.locationId) || locId,
+          assignedLocations: existingEmp.assignedLocations?.length
+            ? existingEmp.assignedLocations
+            : [locId],
+          locationName: existingEmp.locationName || khatu.name,
+        },
       },
-      $setOnInsert: { createdAt: now },
-    },
-    { upsert: true },
-  );
+    );
+  }
 
   const others = await users.find({ role: 'employee', email: { $ne: EMPLOYEE_EMAIL } }).toArray();
   for (const u of others) {
@@ -206,7 +228,7 @@ function signToken(user) {
       assignedLocations: assigned,
     },
     authSecret(),
-    { expiresIn: '30d' },
+    { expiresIn: process.env.JWT_EXPIRES || '24h' },
   );
 }
 
@@ -328,12 +350,15 @@ async function addLocation(db, user, body) {
   if (dup) return { status: 400, json: { ok: false, error: 'Ye naam/code pehle se hai' } };
   const id = await nextId(db, 'locations');
   const now = new Date().toISOString();
-  const loc = { id, name, code, address, status, createdAt: now, updatedAt: now };
+  const loc = { id, name, code, nameKey: nameKey(name), address, status, createdAt: now, updatedAt: now };
   await db.collection('locations').insertOne(loc);
 
   const empEmail = String(body?.email ?? '').trim().toLowerCase();
   const empPass = String(body?.password ?? '');
-  if (empEmail && empPass.length >= 4) {
+  if (empEmail && empPass) {
+    const { validatePassword } = require('./password');
+    const pwErr = validatePassword(empPass);
+    if (pwErr) return { status: 400, json: { ok: false, error: pwErr } };
     const exists = await db.collection('users').findOne({ email: empEmail });
     if (exists) return { status: 400, json: { ok: false, error: 'Ye employee email pehle se hai' } };
     const uid = await nextId(db, 'users');

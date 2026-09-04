@@ -60,6 +60,66 @@ class HomePage extends StatelessWidget {
                 ),
               ),
               IconButton(
+                tooltip: 'Import CSV',
+                onPressed: !store.canWrite
+                    ? null
+                    : () async {
+                        final ctrl = TextEditingController();
+                        final raw = await showDialog<String>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Import Portal CSV'),
+                            content: SizedBox(
+                              width: 480,
+                              child: TextField(
+                                controller: ctrl,
+                                maxLines: 10,
+                                decoration: const InputDecoration(
+                                  hintText: 'date,name,mobile,sim,type,frc,status',
+                                ),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Import')),
+                            ],
+                          ),
+                        );
+                        if (raw == null || raw.trim().isEmpty) return;
+                        final lines = raw.trim().split(RegExp(r'\r?\n')).where((l) => l.trim().isNotEmpty).toList();
+                        if (lines.length < 2) return;
+                        final headers = lines.first.split(',').map((s) => s.trim()).toList();
+                        final rows = <Map<String, dynamic>>[];
+                        for (final line in lines.skip(1)) {
+                          final cells = line.split(',');
+                          final m = <String, dynamic>{};
+                          for (var i = 0; i < headers.length && i < cells.length; i++) {
+                            m[headers[i]] = cells[i].trim();
+                          }
+                          rows.add(m);
+                        }
+                        try {
+                          final out = await store.auth.api.importRows(
+                            store.auth.apiBase,
+                            'sims',
+                            rows,
+                            locationId: store.auth.effectiveLocationId,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Imported ${out['added'] ?? 0}, failed ${out['failed'] ?? 0}')),
+                            );
+                          }
+                          await store.load();
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.upload_file_outlined),
+              ),
+              IconButton(
                 tooltip: 'Download Excel',
                 onPressed: store.filtered.isEmpty
                     ? null

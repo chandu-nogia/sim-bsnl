@@ -2,17 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class BsnlColors {
-  static const navy = Color(0xFF0B3D91);
-  static const navyDark = Color(0xFF072A66);
-  static const ink = Color(0xFF1A1A1A);
-  static const muted = Color(0xFF5F6B7A);
-  static const page = Color(0xFFF3F6FB);
-  static const cymn = Color(0xFFBBDEFB);
-  static const mnp = Color(0xFFFFE0B2);
-  static const swap = Color(0xFFE1BEE7);
-  static const postpaid = Color(0xFFFFF59D);
-  static const issued = Color(0xFFC8E6C9);
-  static const gold = Color(0xFFFFC107);
+  static const navy = Color(0xFF0A2A6B);
+  static const navyDark = Color(0xFF071A44);
+  static const royal = Color(0xFF1557C0);
+  static const ink = Color(0xFF0F172A);
+  static const muted = Color(0xFF5B6573);
+  static const page = Color(0xFFF6F3EC);
+  static const paper = Color(0xFFFFFDF8);
+  static const line = Color(0xFFE6E0D4);
+  static const cymn = Color(0xFFD6E8FF);
+  static const mnp = Color(0xFFFFE4C4);
+  static const swap = Color(0xFFE8D5F2);
+  static const postpaid = Color(0xFFFFF3B0);
+  static const issued = Color(0xFFD4EDDA);
+  static const gold = Color(0xFFF4A261);
+  static const saffron = Color(0xFFE76F51);
+  static const success = Color(0xFF1B7A4E);
 }
 
 ThemeData buildBsnlTheme() {
@@ -21,9 +26,13 @@ ThemeData buildBsnlTheme() {
     colorScheme: ColorScheme.fromSeed(
       seedColor: BsnlColors.navy,
       primary: BsnlColors.navy,
+      surface: BsnlColors.paper,
     ),
   );
-  final text = GoogleFonts.plusJakartaSansTextTheme(base.textTheme);
+  final text = GoogleFonts.manropeTextTheme(base.textTheme).apply(
+    bodyColor: BsnlColors.ink,
+    displayColor: BsnlColors.ink,
+  );
   return base.copyWith(
     textTheme: text,
     scaffoldBackgroundColor: BsnlColors.page,
@@ -34,14 +43,22 @@ ThemeData buildBsnlTheme() {
       },
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: BsnlColors.navy,
+      backgroundColor: BsnlColors.navyDark,
       foregroundColor: Colors.white,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: GoogleFonts.plusJakartaSans(
+      titleTextStyle: GoogleFonts.manrope(
         color: Colors.white,
         fontSize: 20,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: BsnlColors.navy,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
@@ -50,37 +67,31 @@ ThemeData buildBsnlTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: BsnlColors.paper,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFD0D7DE)),
+        borderSide: const BorderSide(color: BsnlColors.line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: BsnlColors.royal, width: 1.4),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     ),
     cardTheme: CardThemeData(
-      color: Colors.white,
+      color: BsnlColors.paper,
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        side: const BorderSide(color: BsnlColors.line),
       ),
     ),
+    dividerColor: BsnlColors.line,
   );
 }
 
 BoxDecoration bsnlPageGradient() {
-  return const BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        Color(0xFF071A3A),
-        Color(0xFF0B3D91),
-        Color(0xFF1A5FBF),
-        Color(0xFFF3F6FB),
-      ],
-      stops: [0, 0.28, 0.48, 0.48],
-    ),
-  );
+  return const BoxDecoration(color: BsnlColors.page);
 }

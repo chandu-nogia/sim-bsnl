@@ -175,7 +175,7 @@ class _DashboardHomeState extends State<DashboardHome> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
+                  headingRowColor: WidgetStateProperty.all(BsnlColors.navyDark),
                   headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                   columns: const [
                     DataColumn(label: Text('Location')),

@@ -9,8 +9,10 @@ import '../screens/employees_page.dart';
 import '../screens/home_page.dart';
 import '../screens/locations_page.dart';
 import '../screens/profile_page.dart';
+import '../screens/recycle_page.dart';
 import '../screens/reports_page.dart';
 import '../screens/settings_page.dart';
+import '../screens/shop_page.dart';
 import '../state/auth_store.dart';
 import '../state/sim_store.dart';
 import '../util/format.dart';
@@ -47,9 +49,12 @@ class _AppShellState extends State<AppShell> {
         _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
         _NavItem('cbc', 'CBC List', Icons.receipt_long_outlined),
         _NavItem('ctopup', 'C-TopUp', Icons.payments_outlined),
-        _NavItem('users', 'Users', Icons.people_outline),
+        _NavItem('stock', 'SIM Stock', Icons.inventory_2_outlined),
+        _NavItem('closing', 'Daily Closing', Icons.event_available_outlined),
+        _NavItem('recycle', 'Recycle Bin', Icons.delete_outline),
         _NavItem('reports', 'Reports', Icons.assessment_outlined, adminOnly: true),
         _NavItem('activity', 'Activity Logs', Icons.history),
+        _NavItem('profile', 'Profile', Icons.person_outline),
         _NavItem('settings', 'Settings', Icons.settings_outlined, adminOnly: true),
       ];
     }
@@ -58,6 +63,10 @@ class _AppShellState extends State<AppShell> {
       _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
       _NavItem('cbc', 'CBC List', Icons.receipt_long_outlined),
       _NavItem('ctopup', 'C-TopUp', Icons.payments_outlined),
+      _NavItem('stock', 'SIM Stock', Icons.inventory_2_outlined),
+      _NavItem('closing', 'Daily Closing', Icons.event_available_outlined),
+      _NavItem('recycle', 'Recycle Bin', Icons.delete_outline),
+      _NavItem('activity', 'Activity', Icons.history),
       _NavItem('profile', 'Profile', Icons.person_outline),
     ];
   }
@@ -152,6 +161,14 @@ class _AppShellState extends State<AppShell> {
         return SettingsPage(store: widget.simStore, nested: true);
       case 'profile':
         return ProfilePage(auth: auth);
+      case 'recycle':
+        return RecyclePage(auth: auth);
+      case 'stock':
+        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
+        return StockPage(key: ValueKey('stock-$_locId'), auth: auth);
+      case 'closing':
+        if (auth.isAdmin && _locId == null) return _pickLocationFirst();
+        return ClosingPage(key: ValueKey('close-$_locId'), auth: auth);
       case 'portal':
       case 'users':
         if (auth.isAdmin && _locId == null) return _pickLocationFirst();
@@ -386,9 +403,12 @@ class _AppShellState extends State<AppShell> {
           branch('portal', 'BSNL Portal', Icons.sim_card_outlined),
           branch('cbc', 'CBC List', Icons.receipt_long_outlined),
           branch('ctopup', 'C-TopUp', Icons.payments_outlined),
-          tile(const _NavItem('users', 'Users', Icons.people_outline)),
+          tile(const _NavItem('stock', 'SIM Stock', Icons.inventory_2_outlined)),
+          tile(const _NavItem('closing', 'Daily Closing', Icons.event_available_outlined)),
+          tile(const _NavItem('recycle', 'Recycle Bin', Icons.delete_outline)),
           tile(const _NavItem('reports', 'Reports', Icons.assessment_outlined, adminOnly: true)),
           tile(const _NavItem('activity', 'Activity Logs', Icons.history)),
+          tile(const _NavItem('profile', 'Profile', Icons.person_outline)),
           tile(const _NavItem('settings', 'Settings', Icons.settings_outlined, adminOnly: true)),
         ] else ...[
           for (final item in _items) tile(item),

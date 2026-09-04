@@ -30,6 +30,7 @@ class CtopupPage extends StatelessWidget {
           'Paid',
           'Failed',
         ]),
+        RecordField('note', 'Note'),
       ],
     );
   }
