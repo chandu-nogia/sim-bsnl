@@ -92,6 +92,8 @@ class _DashboardHomeState extends State<DashboardHome> {
             name: name,
             records: asNum(_totals['records']).round(),
             amount: asNum(_totals['combinedAmount']),
+            commission: asNum(_totals['combinedCommission']),
+            balance: asNum(_totals['combinedBalance']),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -113,7 +115,7 @@ class _DashboardHomeState extends State<DashboardHome> {
               _Kpi(
                 title: 'CBC Collection',
                 value: rupee(asNum(_totals['cbcAmount'])),
-                subtitle: '${asNum(_data['cbc']).round()} bills  ·  avg ${rupee(asNum(_totals['avgCbc']))}',
+                subtitle: '${asNum(_data['cbc']).round()} bills  ·  comm ${rupee(asNum(_totals['cbcCommission']))}  ·  bal ${rupee(asNum(_totals['cbcBalance']))}',
                 icon: Icons.receipt_long_outlined,
                 colors: const [Color(0xFF15803D), Color(0xFF22C55E)],
                 onTap: () => widget.onOpenSection?.call('cbc'),
@@ -121,17 +123,31 @@ class _DashboardHomeState extends State<DashboardHome> {
               _Kpi(
                 title: 'CTOPUP Collection',
                 value: rupee(asNum(_totals['ctopupAmount'])),
-                subtitle: '${asNum(_data['ctopup']).round()} txns  ·  avg ${rupee(asNum(_totals['avgCtopup']))}',
+                subtitle: '${asNum(_data['ctopup']).round()} txns  ·  comm ${rupee(asNum(_totals['ctopupCommission']))}  ·  bal ${rupee(asNum(_totals['ctopupBalance']))}',
                 icon: Icons.payments_outlined,
                 colors: const [Color(0xFF7C3AED), Color(0xFFEC4899)],
                 onTap: () => widget.onOpenSection?.call('ctopup'),
               ),
               _Kpi(
-                title: 'Total Business',
+                title: 'Total Amount',
                 value: rupee(asNum(_totals['combinedAmount'])),
-                subtitle: 'CBC + CTOPUP combined',
+                subtitle: 'CBC ${rupee(asNum(_totals['cbcAmount']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupAmount']))}',
                 icon: Icons.account_balance_wallet_outlined,
                 colors: const [Color(0xFF0E7490), Color(0xFF06B6D4)],
+              ),
+              _Kpi(
+                title: 'Total Commission',
+                value: rupee(asNum(_totals['combinedCommission'])),
+                subtitle: 'CBC ${rupee(asNum(_totals['cbcCommission']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupCommission']))}',
+                icon: Icons.percent_outlined,
+                colors: const [Color(0xFFB45309), Color(0xFFF59E0B)],
+              ),
+              _Kpi(
+                title: 'Total Balance',
+                value: rupee(asNum(_totals['combinedBalance'])),
+                subtitle: 'CBC ${rupee(asNum(_totals['cbcBalance']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupBalance']))}',
+                icon: Icons.savings_outlined,
+                colors: const [Color(0xFF0F766E), Color(0xFF14B8A6)],
               ),
             ],
           ),
@@ -202,10 +218,12 @@ class _DashboardHomeState extends State<DashboardHome> {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.name, required this.records, required this.amount});
+  const _Hero({required this.name, required this.records, required this.amount, required this.commission, required this.balance});
   final String name;
   final int records;
   final num amount;
+  final num commission;
+  final num balance;
 
   @override
   Widget build(BuildContext context) {
@@ -232,7 +250,9 @@ class _Hero extends StatelessWidget {
             runSpacing: 10,
             children: [
               _pill('$records records'),
-              _pill('${rupee(amount)} business'),
+              _pill('${rupee(amount)} amount'),
+              _pill('${rupee(commission)} commission'),
+              _pill('${rupee(balance)} balance'),
               _pill('Personal management'),
             ],
           ),
@@ -391,6 +411,8 @@ class _PeriodTable extends StatelessWidget {
             Text('Portal  ${asNum(m['sims']).round()}', style: const TextStyle(fontWeight: FontWeight.w700)),
             Text('CBC  ${asNum(m['cbc']).round()}  ·  ${rupee(asNum(m['cbcAmount']))}', style: const TextStyle(fontWeight: FontWeight.w600, color: BsnlColors.muted)),
             Text('CTOPUP  ${asNum(m['ctopup']).round()}  ·  ${rupee(asNum(m['ctopupAmount']))}', style: const TextStyle(fontWeight: FontWeight.w600, color: BsnlColors.muted)),
+            Text('Commission  ${rupee(asNum(m['combinedCommission']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text('Balance  ${rupee(asNum(m['combinedBalance']))}', style: const TextStyle(fontWeight: FontWeight.w700)),
           ],
         ),
       );

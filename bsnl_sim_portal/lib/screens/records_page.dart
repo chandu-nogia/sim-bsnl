@@ -61,6 +61,10 @@ class _RecordsPageState extends State<RecordsPage> {
   int _limit = 50;
   int _total = 0;
   String _status = 'All';
+  String _sort = 'date';
+  String _order = 'desc';
+  DateTime? _from;
+  DateTime? _to;
 
   bool get _hasStatus {
     for (final f in widget.fields) {
@@ -103,7 +107,11 @@ class _RecordsPageState extends State<RecordsPage> {
         widget.path,
         locationId: loc,
         q: _search.text.trim(),
+        from: _from == null ? null : DateFormat('yyyy-MM-dd').format(_from!),
+        to: _to == null ? null : DateFormat('yyyy-MM-dd').format(_to!),
         status: _status == 'All' ? null : _status,
+        sort: _sort,
+        order: _order,
         page: _page,
         limit: _limit,
       );
@@ -295,6 +303,84 @@ class _RecordsPageState extends State<RecordsPage> {
                       },
                     ),
                   ),
+                _DateChip(
+                  label: 'From',
+                  value: _from,
+                  onPick: () async {
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: _from ?? DateTime.now(),
+                      firstDate: DateTime(2024),
+                      lastDate: DateTime(2035),
+                    );
+                    if (d == null) return;
+                    setState(() {
+                      _from = d;
+                      _page = 1;
+                    });
+                    _load();
+                  },
+                  onClear: _from == null
+                      ? null
+                      : () {
+                          setState(() {
+                            _from = null;
+                            _page = 1;
+                          });
+                          _load();
+                        },
+                ),
+                _DateChip(
+                  label: 'To',
+                  value: _to,
+                  onPick: () async {
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: _to ?? DateTime.now(),
+                      firstDate: DateTime(2024),
+                      lastDate: DateTime(2035),
+                    );
+                    if (d == null) return;
+                    setState(() {
+                      _to = d;
+                      _page = 1;
+                    });
+                    _load();
+                  },
+                  onClear: _to == null
+                      ? null
+                      : () {
+                          setState(() {
+                            _to = null;
+                            _page = 1;
+                          });
+                          _load();
+                        },
+                ),
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<String>(
+                    // ignore: deprecated_member_use
+                    value: '$_sort|$_order',
+                    decoration: const InputDecoration(labelText: 'Sort', isDense: true),
+                    items: const [
+                      DropdownMenuItem(value: 'date|desc', child: Text('Date · newest')),
+                      DropdownMenuItem(value: 'date|asc', child: Text('Date · oldest')),
+                      DropdownMenuItem(value: 'amount|desc', child: Text('Amount · high')),
+                      DropdownMenuItem(value: 'amount|asc', child: Text('Amount · low')),
+                      DropdownMenuItem(value: 'commission|desc', child: Text('Commission · high')),
+                      DropdownMenuItem(value: 'balance|desc', child: Text('Balance · high')),
+                      DropdownMenuItem(value: 'name|asc', child: Text('Name A–Z')),
+                    ],
+                    onChanged: (v) {
+                      final p = (v ?? 'date|desc').split('|');
+                      _sort = p[0];
+                      _order = p.length > 1 ? p[1] : 'desc';
+                      _page = 1;
+                      _load();
+                    },
+                  ),
+                ),
                 Text(
                   _total == 0 ? '0 rows' : '${((_page - 1) * _limit) + 1}–${(((_page - 1) * _limit) + _rows.length).clamp(0, _total)} of $_total',
                   style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
@@ -543,6 +629,25 @@ class _RecordFormPageState extends State<RecordFormPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DateChip extends StatelessWidget {
+  const _DateChip({required this.label, required this.value, required this.onPick, this.onClear});
+  final String label;
+  final DateTime? value;
+  final VoidCallback onPick;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = value == null ? label : '$label ${DateFormat('dd/MM/yyyy').format(value!)}';
+    return InputChip(
+      label: Text(text),
+      avatar: const Icon(Icons.calendar_month_outlined, size: 18),
+      onPressed: onPick,
+      onDeleted: onClear,
     );
   }
 }

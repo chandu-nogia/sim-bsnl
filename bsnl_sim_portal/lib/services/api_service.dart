@@ -170,6 +170,8 @@ class ApiService {
     String? from,
     String? to,
     String? status,
+    String? sort,
+    String? order,
     int? page,
     int? limit,
   }) async {
@@ -183,6 +185,8 @@ class ApiService {
             'from': from,
             'to': to,
             'status': status,
+            'sort': sort,
+            'order': order,
             'page': page?.toString(),
             'limit': limit?.toString(),
           }),
@@ -210,6 +214,8 @@ class ApiService {
     String? from,
     String? to,
     String? status,
+    String? sort,
+    String? order,
     int? page,
     int? limit,
   }) async {
@@ -221,6 +227,8 @@ class ApiService {
       from: from,
       to: to,
       status: status,
+      sort: sort,
+      order: order,
       page: page,
       limit: limit,
     );
@@ -265,8 +273,24 @@ class ApiService {
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Delete failed'}');
   }
 
-  Future<List<SimEntry>> list(String base, {int? locationId}) async {
-    final rows = await listRows(base, '/api/sims', locationId: locationId, limit: 500);
+  Future<List<SimEntry>> list(
+    String base, {
+    int? locationId,
+    String? from,
+    String? to,
+    String? sort,
+    String? order,
+  }) async {
+    final rows = await listRows(
+      base,
+      '/api/sims',
+      locationId: locationId,
+      from: from,
+      to: to,
+      sort: sort,
+      order: order,
+      limit: 500,
+    );
     return [for (final r in rows) SimEntry.fromSheet(r)];
   }
 

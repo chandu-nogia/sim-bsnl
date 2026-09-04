@@ -21,6 +21,7 @@ async function ensureIndexes(db) {
     jobs.push(db.collection(col).createIndex({ createdBy: 1 }));
     jobs.push(db.collection(col).createIndex({ locationId: 1, deletedAt: 1 }));
     jobs.push(db.collection(col).createIndex({ locationId: 1, mobile: 1 }));
+    jobs.push(db.collection(col).createIndex({ dateKey: 1, id: -1 }));
   }
   jobs.push(db.collection('cbc').createIndex({ locationId: 1, transactionId: 1 }));
   jobs.push(db.collection('ctopup').createIndex({ locationId: 1, transactionId: 1 }));

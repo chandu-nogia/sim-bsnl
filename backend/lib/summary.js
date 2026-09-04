@@ -51,15 +51,19 @@ function emptyBucket(loc) {
   };
 }
 
-function amountExpr() {
+function moneyExpr(field, numField) {
   return {
     $convert: {
-      input: { $ifNull: ['$amountNum', '$amount'] },
+      input: { $ifNull: [`$${numField}`, `$${field}`] },
       to: 'double',
       onError: 0,
       onNull: 0,
     },
   };
+}
+
+function amountExpr() {
+  return moneyExpr('amount', 'amountNum');
 }
 
 async function simStats(db) {
@@ -370,11 +374,18 @@ async function ownerDashboard(db) {
           _id: null,
           n: { $sum: 1 },
           amount: { $sum: amountExpr() },
+          commission: { $sum: moneyExpr('commission', 'commissionNum') },
+          balance: { $sum: moneyExpr('balance', 'balanceNum') },
         },
       },
     ]).toArray();
     const r = rows[0] || {};
-    return { n: r.n || 0, amount: Math.round((r.amount || 0) * 100) / 100 };
+    return {
+      n: r.n || 0,
+      amount: Math.round((r.amount || 0) * 100) / 100,
+      commission: Math.round((r.commission || 0) * 100) / 100,
+      balance: Math.round((r.balance || 0) * 100) / 100,
+    };
   }
 
   const todayQ = rangeQuery(todayStart);
@@ -446,6 +457,8 @@ async function ownerDashboard(db) {
       ctopup: t.n,
       cbcAmount: c.amount,
       ctopupAmount: t.amount,
+      commission: Math.round((c.commission + t.commission) * 100) / 100,
+      balance: Math.round((c.balance + t.balance) * 100) / 100,
       amount: Math.round((c.amount + t.amount) * 100) / 100,
     });
   }
@@ -478,6 +491,12 @@ async function ownerDashboard(db) {
       cbcAmount: cbcAll.amount,
       ctopupAmount: topAll.amount,
       combinedAmount: Math.round((cbcAll.amount + topAll.amount) * 100) / 100,
+      cbcCommission: cbcAll.commission,
+      ctopupCommission: topAll.commission,
+      combinedCommission: Math.round((cbcAll.commission + topAll.commission) * 100) / 100,
+      cbcBalance: cbcAll.balance,
+      ctopupBalance: topAll.balance,
+      combinedBalance: Math.round((cbcAll.balance + topAll.balance) * 100) / 100,
       avgCbc: cbcAll.n ? Math.round((cbcAll.amount / cbcAll.n) * 100) / 100 : 0,
       avgCtopup: topAll.n ? Math.round((topAll.amount / topAll.n) * 100) / 100 : 0,
     },
@@ -488,6 +507,8 @@ async function ownerDashboard(db) {
       cbcAmount: todayCbc.amount,
       ctopupAmount: todayTop.amount,
       combinedAmount: Math.round((todayCbc.amount + todayTop.amount) * 100) / 100,
+      combinedCommission: Math.round((todayCbc.commission + todayTop.commission) * 100) / 100,
+      combinedBalance: Math.round((todayCbc.balance + todayTop.balance) * 100) / 100,
     },
     week: {
       sims: weekSims,
@@ -496,6 +517,8 @@ async function ownerDashboard(db) {
       cbcAmount: weekCbc.amount,
       ctopupAmount: weekTop.amount,
       combinedAmount: Math.round((weekCbc.amount + weekTop.amount) * 100) / 100,
+      combinedCommission: Math.round((weekCbc.commission + weekTop.commission) * 100) / 100,
+      combinedBalance: Math.round((weekCbc.balance + weekTop.balance) * 100) / 100,
     },
     month: {
       sims: monthSims,
@@ -504,6 +527,8 @@ async function ownerDashboard(db) {
       cbcAmount: monthCbc.amount,
       ctopupAmount: monthTop.amount,
       combinedAmount: Math.round((monthCbc.amount + monthTop.amount) * 100) / 100,
+      combinedCommission: Math.round((monthCbc.commission + monthTop.commission) * 100) / 100,
+      combinedBalance: Math.round((monthCbc.balance + monthTop.balance) * 100) / 100,
     },
     portalTypes,
     ctopupStatus: {

@@ -4,6 +4,7 @@ const { nextId } = require('./ids');
 const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
 const { locationMatchQuery } = require('./location_resolve');
+const { dateKeyOf, applyDateRange, sortSpec } = require('./dates');
 const { withAlive } = require('./alive');
 
 function publicRow(row) {
@@ -14,6 +15,7 @@ function publicRow(row) {
     locationId: row.locationId ? Number(row.locationId) : null,
     locationName: row.locationName || '',
     date: row.date || '',
+    dateKey: row.dateKey || dateKeyOf(row.date),
     sno: row.sno ?? 0,
     name: row.name || '',
     alt: row.alt || '',
@@ -40,6 +42,7 @@ function pickBody(body) {
     (digits.length >= 6 ? digits.slice(-6) : digits);
   return {
     date: String(b.date ?? '').trim(),
+    dateKey: dateKeyOf(b.date),
     sno: Number.parseInt(String(b.sno ?? ''), 10) || 0,
     name: String(b.name ?? '').trim(),
     alt: String(b.alt ?? b.altNumber ?? '').trim(),
@@ -60,19 +63,13 @@ function validate(_row) {
 async function listSims(db, scope = {}) {
   let q = withAlive(mongoListQuery(scope));
   q = applyTextSearch(q, ['name', 'mobile', 'sim', 'last6', 'note'], scope.q);
-  const from = String(scope.from || '').slice(0, 10);
-  const to = String(scope.to || '').slice(0, 10);
-  if (from || to) {
-    q.date = {};
-    if (from) q.date.$gte = from;
-    if (to) q.date.$lte = to;
-  }
+  q = applyDateRange(q, scope.from, scope.to);
   const page = Math.max(1, Number(scope.page) || 1);
   const limit = Math.min(500, Math.max(20, Number(scope.limit) || 300));
   const skip = (page - 1) * limit;
   const col = db.collection('sims');
   const total = await col.countDocuments(q);
-  const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+  const rows = await col.find(q).sort(sortSpec(scope)).skip(skip).limit(limit).toArray();
   return { rows: rows.map(publicRow), total, page, limit };
 }
 

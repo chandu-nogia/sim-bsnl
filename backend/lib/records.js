@@ -5,7 +5,22 @@ const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
 const { locationMatchQuery } = require('./location_resolve');
 const { withAlive } = require('./alive');
+const { dateKeyOf, applyDateRange, sortSpec } = require('./dates');
 const { moneyNumber } = require('./password');
+
+function moneyFields(b) {
+  const amount = String(b.amount ?? '').trim();
+  const commission = String(b.commission ?? b.commition ?? b.commision ?? '').trim();
+  const balance = String(b.balance ?? '').trim();
+  return {
+    amount,
+    amountNum: moneyNumber(amount),
+    commission,
+    commissionNum: moneyNumber(commission),
+    balance,
+    balanceNum: moneyNumber(balance),
+  };
+}
 
 function publicCbc(row) {
   const id = Number(row.id);
@@ -15,11 +30,16 @@ function publicCbc(row) {
     locationId: row.locationId ? Number(row.locationId) : null,
     locationName: row.locationName || '',
     date: row.date || '',
+    dateKey: row.dateKey || dateKeyOf(row.date),
     name: row.name || '',
     mobile: row.mobile || '',
     landline: row.landline || '',
     amount: row.amount || '',
     amountNum: moneyNumber(row.amountNum ?? row.amount),
+    commission: row.commission || '',
+    commissionNum: moneyNumber(row.commissionNum ?? row.commission),
+    balance: row.balance || '',
+    balanceNum: moneyNumber(row.balanceNum ?? row.balance),
     transactionId: row.transactionId || '',
     note: row.note || '',
     createdBy: row.createdBy || '',
@@ -31,13 +51,14 @@ function publicCbc(row) {
 
 function pickCbc(body) {
   const b = body && typeof body === 'object' ? body : {};
+  const date = String(b.date ?? '').trim();
   return {
-    date: String(b.date ?? '').trim(),
+    date,
+    dateKey: dateKeyOf(date),
     name: String(b.name ?? '').trim(),
     mobile: String(b.mobile ?? '').trim(),
     landline: String(b.landline ?? '').trim(),
-    amount: String(b.amount ?? '').trim(),
-    amountNum: moneyNumber(b.amount),
+    ...moneyFields(b),
     transactionId: String(b.transactionId ?? b.txnId ?? '').trim(),
     note: String(b.note ?? b.remarks ?? '').trim(),
   };
@@ -55,13 +76,18 @@ function publicCtopup(row) {
     locationId: row.locationId ? Number(row.locationId) : null,
     locationName: row.locationName || '',
     date: row.date || '',
+    dateKey: row.dateKey || dateKeyOf(row.date),
     name: row.name || '',
     number: row.number || '',
     amount: row.amount || '',
+    amountNum: moneyNumber(row.amountNum ?? row.amount),
+    commission: row.commission || '',
+    commissionNum: moneyNumber(row.commissionNum ?? row.commission),
+    balance: row.balance || '',
+    balanceNum: moneyNumber(row.balanceNum ?? row.balance),
     status: row.status || 'Pending',
     transactionId: row.transactionId || '',
     note: row.note || '',
-    amountNum: moneyNumber(row.amountNum ?? row.amount),
     createdBy: row.createdBy || '',
     employeeId: row.employeeId ? Number(row.employeeId) : null,
     createdAt: row.createdAt || '',
@@ -71,12 +97,13 @@ function publicCtopup(row) {
 
 function pickCtopup(body) {
   const b = body && typeof body === 'object' ? body : {};
+  const date = String(b.date ?? '').trim();
   return {
-    date: String(b.date ?? '').trim(),
+    date,
+    dateKey: dateKeyOf(date),
     name: String(b.name ?? '').trim(),
     number: String(b.number ?? b.mobile ?? '').trim(),
-    amount: String(b.amount ?? '').trim(),
-    amountNum: moneyNumber(b.amount),
+    ...moneyFields(b),
     status: String(b.status ?? b.paymentStatus ?? 'Pending').trim() || 'Pending',
     transactionId: String(b.transactionId ?? b.txnId ?? b.reference ?? '').trim(),
     note: String(b.note ?? b.remarks ?? '').trim(),
@@ -96,13 +123,7 @@ function makeCrud(collection, pick, validate, toPublic, section) {
     async list(db, scope = {}) {
       let q = withAlive(mongoListQuery(scope));
       q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId', 'note'], scope.q);
-      const from = String(scope.from || '').slice(0, 10);
-      const to = String(scope.to || '').slice(0, 10);
-      if (from || to) {
-        q.date = {};
-        if (from) q.date.$gte = from;
-        if (to) q.date.$lte = to;
-      }
+      q = applyDateRange(q, scope.from, scope.to);
       const status = String(scope.status || '').trim();
       if (status) q.status = status;
       const page = Math.max(1, Number(scope.page) || 1);
@@ -110,7 +131,7 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const skip = (page - 1) * limit;
       const col = db.collection(collection);
       const total = await col.countDocuments(q);
-      const rows = await col.find(q).sort({ id: -1 }).skip(skip).limit(limit).toArray();
+      const rows = await col.find(q).sort(sortSpec(scope)).skip(skip).limit(limit).toArray();
       return { rows: rows.map(toPublic), total, page, limit };
     },
     async add(db, body, meta) {

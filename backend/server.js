@@ -80,6 +80,8 @@ function scoped(req) {
     q: req.query?.q || req.query?.search || '',
     from: req.query?.from || '',
     to: req.query?.to || '',
+    sort: req.query?.sort || 'date',
+    order: req.query?.order || 'desc',
     status: req.query?.status || '',
     page: req.query?.page,
     limit: req.query?.limit,
@@ -108,7 +110,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-3' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-4' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -298,6 +300,8 @@ async function start() {
   try {
     const db = await getDb();
     await seedUsers(db);
+    const { backfillDateKeys } = require('./lib/dates');
+    await backfillDateKeys(db);
     await ensureIndexes(db);
     console.log('Owner account and Khatushyamji location ready');
   } catch (e) {

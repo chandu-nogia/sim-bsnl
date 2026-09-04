@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../app_theme.dart';
 import '../models/sim_entry.dart';
@@ -162,6 +163,55 @@ class FilterBar extends StatelessWidget {
                 ],
                 onChanged: (v) => store.setFrcFilter(v ?? 'All'),
               ),
+            ),
+            SizedBox(
+              width: 180,
+              child: DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: '${store.sortBy}|${store.sortAsc}',
+                decoration: const InputDecoration(
+                  labelText: 'Sort',
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'date|false', child: Text('Date · newest')),
+                  DropdownMenuItem(value: 'date|true', child: Text('Date · oldest')),
+                  DropdownMenuItem(value: 'name|true', child: Text('Name A–Z')),
+                  DropdownMenuItem(value: 'name|false', child: Text('Name Z–A')),
+                ],
+                onChanged: (v) {
+                  final p = (v ?? 'date|false').split('|');
+                  store.setSort(p[0], p[1] == 'true');
+                },
+              ),
+            ),
+            InputChip(
+              label: Text(store.fromDate == null ? 'From date' : 'From ${DateFormat('dd/MM/yyyy').format(store.fromDate!)}'),
+              avatar: const Icon(Icons.calendar_month_outlined, size: 18),
+              onPressed: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: store.fromDate ?? DateTime.now(),
+                  firstDate: DateTime(2024),
+                  lastDate: DateTime(2035),
+                );
+                if (d != null) store.setDateRange(from: d);
+              },
+              onDeleted: store.fromDate == null ? null : () => store.setDateRange(clearFrom: true),
+            ),
+            InputChip(
+              label: Text(store.toDate == null ? 'To date' : 'To ${DateFormat('dd/MM/yyyy').format(store.toDate!)}'),
+              avatar: const Icon(Icons.calendar_month_outlined, size: 18),
+              onPressed: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: store.toDate ?? DateTime.now(),
+                  firstDate: DateTime(2024),
+                  lastDate: DateTime(2035),
+                );
+                if (d != null) store.setDateRange(to: d);
+              },
+              onDeleted: store.toDate == null ? null : () => store.setDateRange(clearTo: true),
             ),
             TextButton.icon(
               onPressed: store.clearFilters,

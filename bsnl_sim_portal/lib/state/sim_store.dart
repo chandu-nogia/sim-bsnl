@@ -18,6 +18,10 @@ class SimStore extends ChangeNotifier {
   String search = '';
   String typeFilter = 'All';
   String frcFilter = 'All';
+  DateTime? fromDate;
+  DateTime? toDate;
+  String sortBy = 'date';
+  bool sortAsc = false;
   bool useApi = true;
   bool loading = true;
   bool connected = false;
@@ -34,10 +38,17 @@ class SimStore extends ChangeNotifier {
   List<SimEntry> get filtered {
     final loc = auth.effectiveLocationId;
     final q = search.trim().toLowerCase();
-    return entries.where((e) {
+    final from = fromDate == null ? null : DateTime(fromDate!.year, fromDate!.month, fromDate!.day);
+    final to = toDate == null ? null : DateTime(toDate!.year, toDate!.month, toDate!.day, 23, 59, 59);
+    final rows = entries.where((e) {
       if (loc != null && e.locationId != null && e.locationId != loc) return false;
       if (typeFilter != 'All' && e.type.label != typeFilter) return false;
       if (frcFilter != 'All' && e.frc != frcFilter) return false;
+      if (from != null || to != null) {
+        final d = _parseDate(e.date);
+        if (from != null && d.isBefore(from)) return false;
+        if (to != null && d.isAfter(to)) return false;
+      }
       if (q.isEmpty) return true;
       return e.name.toLowerCase().contains(q) ||
           e.mobile.contains(q) ||
@@ -46,6 +57,32 @@ class SimStore extends ChangeNotifier {
           e.last6.contains(q) ||
           '${e.sno}'.contains(q);
     }).toList();
+    rows.sort((a, b) {
+      int cmp;
+      if (sortBy == 'name') {
+        cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      } else {
+        cmp = _parseDate(a.date).compareTo(_parseDate(b.date));
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    return rows;
+  }
+
+  DateTime _parseDate(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+    final iso = DateTime.tryParse(t);
+    if (iso != null) return iso;
+    final p = t.split(RegExp(r'[/-]'));
+    if (p.length != 3) return DateTime.fromMillisecondsSinceEpoch(0);
+    final a = int.tryParse(p[0].trim());
+    final b = int.tryParse(p[1].trim());
+    var y = int.tryParse(p[2].trim());
+    if (a == null || b == null || y == null) return DateTime.fromMillisecondsSinceEpoch(0);
+    if (y < 100) y += 2000;
+    if (p[0].trim().length == 4) return DateTime(a, b, y);
+    return DateTime(y, b, a);
   }
 
   Map<String, int> get counts {
@@ -155,6 +192,24 @@ class SimStore extends ChangeNotifier {
     search = '';
     typeFilter = 'All';
     frcFilter = 'All';
+    fromDate = null;
+    toDate = null;
+    sortBy = 'date';
+    sortAsc = false;
+    notifyListeners();
+  }
+
+  void setDateRange({DateTime? from, DateTime? to, bool clearFrom = false, bool clearTo = false}) {
+    if (clearFrom) fromDate = null;
+    if (clearTo) toDate = null;
+    if (from != null) fromDate = from;
+    if (to != null) toDate = to;
+    notifyListeners();
+  }
+
+  void setSort(String by, bool asc) {
+    sortBy = by;
+    sortAsc = asc;
     notifyListeners();
   }
 
