@@ -6,6 +6,7 @@ import '../state/sim_store.dart';
 import '../util/format.dart';
 import '../widgets/bar_chart.dart';
 import '../widgets/fade_in.dart';
+import '../widgets/kpi_card.dart';
 import 'cbc_page.dart';
 import 'ctopup_page.dart';
 import 'home_page.dart';
@@ -32,13 +33,16 @@ class DashboardHome extends StatefulWidget {
 class _DashboardHomeState extends State<DashboardHome> {
   bool _loading = true;
   String? _error;
-  Map<String, dynamic> _totals = {};
   List<Map<String, dynamic>> _locations = [];
   List<Map<String, dynamic>> _activity = [];
   Map<String, dynamic> _charts = {};
   Map<String, dynamic> _mine = {};
   int _locationsCount = 0;
   int _employeesCount = 0;
+  int _activeEmployees = 0;
+  int _pending = 0;
+  int _failed = 0;
+  int _todayActivity = 0;
 
   AuthStore get auth => widget.auth;
 
@@ -58,11 +62,14 @@ class _DashboardHomeState extends State<DashboardHome> {
         final summary = await auth.api.summary(auth.apiBase);
         final activity = await auth.api.activity(auth.apiBase);
         setState(() {
-          _totals = summary['totals'] is Map ? Map<String, dynamic>.from(summary['totals'] as Map) : {};
           _locations = asMaps(summary['byLocation']);
           _charts = summary['charts'] is Map ? Map<String, dynamic>.from(summary['charts'] as Map) : {};
           _locationsCount = asInt(summary['locations']) ?? _locations.length;
           _employeesCount = asInt(summary['employees']) ?? 0;
+          _activeEmployees = asInt(summary['activeEmployees']) ?? _employeesCount;
+          _pending = asInt(summary['pending']) ?? 0;
+          _failed = asInt(summary['failed']) ?? 0;
+          _todayActivity = asInt(summary['todayActivity']) ?? 0;
           _activity = activity;
         });
       } else {
@@ -109,49 +116,55 @@ class _DashboardHomeState extends State<DashboardHome> {
           if (auth.isAdmin) ...[
             FadeIn(
               child: Text(
-                'Organization overview',
+                'Operations',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
               ),
             ),
+            const SizedBox(height: 4),
+            const Text('Live numbers from MongoDB. Click a card to open the list.', style: TextStyle(color: BsnlColors.muted)),
             const SizedBox(height: 12),
-            _StatGrid(
-              items: [
-                ('Locations', '$_locationsCount', Icons.place_outlined, const Color(0xFF0B3D91)),
-                ('Employees', '$_employeesCount', Icons.badge_outlined, const Color(0xFF1A73E8)),
-                ('BSNL records', '${asNum(_totals['sims']).round()}', Icons.sim_card_outlined, const Color(0xFF0E7490)),
-                ('CBC records', '${asNum(_totals['cbcCount']).round()}', Icons.receipt_long_outlined, const Color(0xFF16A34A)),
-                ('CTOPUP records', '${asNum(_totals['ctopupCount']).round()}', Icons.payments_outlined, const Color(0xFF7C3AED)),
-                ('Total users', '${asNum(_totals['sims']).round()}', Icons.people_outline, const Color(0xFF0E7490)),
-                ('CBC amount', rupee(asNum(_totals['cbcAmount'])), Icons.receipt_long_outlined, const Color(0xFF16A34A)),
-                ('C-TopUp amount', rupee(asNum(_totals['ctopupAmount'])), Icons.payments_outlined, const Color(0xFF7C3AED)),
-                ('Today CBC', rupee(asNum(_totals['cbcAmountToday'])), Icons.today_outlined, const Color(0xFF059669)),
-                ('Today C-TopUp', rupee(asNum(_totals['ctopupAmountToday'])), Icons.today, const Color(0xFF9333EA)),
-                ('Monthly CBC', rupee(asNum(_totals['cbcAmountMonth'])), Icons.calendar_month, const Color(0xFF0F766E)),
-                ('Monthly C-TopUp', rupee(asNum(_totals['ctopupAmountMonth'])), Icons.calendar_today, const Color(0xFF6D28D9)),
-                ('Transactions', '${asNum(_totals['transactions']).round()}', Icons.swap_horiz, const Color(0xFF1D4ED8)),
-                ('New users today', '${asNum(_totals['newUsersToday']).round()}', Icons.person_add_alt, const Color(0xFF0369A1)),
-                ('New users month', '${asNum(_totals['newUsersMonth']).round()}', Icons.group_add_outlined, const Color(0xFFB45309)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            FadeIn(
-              child: Text(
-                'New users  •  today ${asNum(_totals['newUsersToday']).round()}  •  week ${asNum(_totals['newUsersWeek']).round()}  •  month ${asNum(_totals['newUsersMonth']).round()}',
-                style: const TextStyle(fontWeight: FontWeight.w700, color: BsnlColors.muted),
-              ),
-            ),
-            const SizedBox(height: 14),
             LayoutBuilder(
               builder: (context, box) {
-                final wide = box.maxWidth >= 900;
+                final cols = box.maxWidth >= 1100 ? 3 : box.maxWidth >= 700 ? 2 : 1;
+                final w = (box.maxWidth - (cols - 1) * 10) / cols;
+                final items = <(String, String, IconData, String)>[
+                  ('Total Employees', '$_employeesCount', Icons.badge_outlined, 'employees'),
+                  ('Active Employees', '$_activeEmployees', Icons.verified_outlined, 'employees'),
+                  ('Active Locations', '$_locationsCount', Icons.place_outlined, 'locations'),
+                  ('Pending items', '$_pending', Icons.hourglass_empty, 'closing'),
+                  ("Today's activity", '$_todayActivity', Icons.bolt_outlined, 'activity'),
+                  ('Failed C-TopUp', '$_failed', Icons.error_outline, 'ctopup'),
+                ];
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final it in items)
+                      SizedBox(
+                        width: w,
+                        child: KpiCard(
+                          label: it.$1,
+                          value: it.$2,
+                          icon: it.$3,
+                          onTap: () => widget.onOpenSection?.call(it.$4),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            const Text('Module comparison', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, box) {
                 final charts = [
-                  SimpleBarChart(title: 'New users by location', points: _pts('usersByLocation')),
+                  SimpleBarChart(title: 'Portal records by location', points: _pts('usersByLocation')),
                   SimpleBarChart(title: 'CBC amount by location', points: _pts('cbcByLocation')),
                   SimpleBarChart(title: 'C-TopUp by location', points: _pts('ctopupByLocation')),
-                  SimpleBarChart(title: 'Daily transactions', points: _pts('dailyTxns')),
-                  SimpleBarChart(title: 'Monthly amounts', points: _pts('monthlyAmounts')),
-                  SimpleBarChart(title: 'Employee activity', points: _pts('employeeActivity')),
+                  SimpleBarChart(title: '14-day activity', points: _pts('dailyTxns')),
                 ];
+                final wide = box.maxWidth >= 900;
                 if (!wide) return Column(children: [for (final c in charts) ...[c, const SizedBox(height: 10)]]);
                 return Wrap(
                   spacing: 10,
@@ -163,11 +176,12 @@ class _DashboardHomeState extends State<DashboardHome> {
               },
             ),
             const SizedBox(height: 18),
-            const Text('All Locations', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
-            const SizedBox(height: 4),
-            const Text(
-              'Combined overview only. Records mixed nahi hote — jagah par click karke uska Portal / CBC / C-TopUp kholo.',
-              style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                const Text('Location performance', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+                const Spacer(),
+                TextButton(onPressed: () => widget.onOpenSection?.call('locations'), child: const Text('Manage locations')),
+              ],
             ),
             const SizedBox(height: 8),
             Card(
@@ -179,10 +193,11 @@ class _DashboardHomeState extends State<DashboardHome> {
                   headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                   columns: const [
                     DataColumn(label: Text('Location')),
-                    DataColumn(label: Text('BSNL Portal')),
-                    DataColumn(label: Text('CBC List')),
-                    DataColumn(label: Text('C-TopUp')),
                     DataColumn(label: Text('Employees')),
+                    DataColumn(label: Text('BSNL')),
+                    DataColumn(label: Text('CBC')),
+                    DataColumn(label: Text('C-TopUp')),
+                    DataColumn(label: Text('Status')),
                   ],
                   rows: [
                     for (final row in _locations)
@@ -190,12 +205,13 @@ class _DashboardHomeState extends State<DashboardHome> {
                         cells: [
                           DataCell(
                             Text('${row['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                            onTap: () => _openLoc(row, 'mylocation'),
+                            onTap: () => _openLoc(row, 'portal'),
                           ),
+                          DataCell(Text('${asNum(row['employees']).round()}'), onTap: () => widget.onOpenSection?.call('employees')),
                           DataCell(Text('${asNum(row['sims']).round()}'), onTap: () => _openLoc(row, 'portal')),
                           DataCell(Text('${asNum(row['cbcCount']).round()}'), onTap: () => _openLoc(row, 'cbc')),
                           DataCell(Text('${asNum(row['ctopupCount']).round()}'), onTap: () => _openLoc(row, 'ctopup')),
-                          DataCell(Text('${asNum(row['employees']).round()}')),
+                          DataCell(Text('${row['status'] ?? 'active'}')),
                         ],
                       ),
                   ],
@@ -205,30 +221,16 @@ class _DashboardHomeState extends State<DashboardHome> {
             const SizedBox(height: 18),
             Row(
               children: [
-                const Text('Location-wise data', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+                const Text('Recent activity', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
                 const Spacer(),
-                TextButton(
-                  onPressed: () => widget.onOpenSection?.call('locations'),
-                  child: const Text('Manage'),
-                ),
+                TextButton(onPressed: () => widget.onOpenSection?.call('activity'), child: const Text('View all')),
               ],
             ),
-            const SizedBox(height: 8),
-            for (final row in _locations)
-              _LocationCard(
-                row: row,
-                onOpen: () => _openLoc(row, 'mylocation'),
-                onOpenPortal: () => _openLoc(row, 'portal'),
-                onOpenCbc: () => _openLoc(row, 'cbc'),
-                onOpenCtopup: () => _openLoc(row, 'ctopup'),
-              ),
-            const SizedBox(height: 16),
-            const Text('Recent activity', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
             const SizedBox(height: 8),
             if (_activity.isEmpty)
               const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('No activity yet', style: TextStyle(color: BsnlColors.muted))))
             else
-              for (final a in _activity.take(12)) ActivityTile(row: a),
+              for (final a in _activity.take(8)) ActivityTile(row: a),
           ] else ...[
             Text(
               'Welcome ${auth.name.isEmpty ? 'Employee' : auth.name}',
@@ -320,107 +322,6 @@ class _StatGrid extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _LocationCard extends StatelessWidget {
-  const _LocationCard({
-    required this.row,
-    required this.onOpen,
-    required this.onOpenPortal,
-    required this.onOpenCbc,
-    required this.onOpenCtopup,
-  });
-  final Map<String, dynamic> row;
-  final VoidCallback onOpen;
-  final VoidCallback onOpenPortal;
-  final VoidCallback onOpenCbc;
-  final VoidCallback onOpenCtopup;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onOpen,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: BsnlColors.navy,
-                    foregroundColor: Colors.white,
-                    child: Text(
-                      '${row['name'] ?? 'L'}'.isEmpty ? 'L' : '${row['name']}'.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${row['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        Text(
-                          '${row['code'] ?? ''}  •  ${row['status'] ?? 'active'}',
-                          style: const TextStyle(color: BsnlColors.muted, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _chip('Portal ${asNum(row['sims']).round()}'),
-                  _chip('CBC ${asNum(row['cbcCount']).round()}'),
-                  _chip('C-TopUp ${asNum(row['ctopupCount']).round()}'),
-                  _chip('Employees ${asNum(row['employees']).round()}'),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: onOpenPortal,
-                    icon: const Icon(Icons.sim_card_outlined, size: 16),
-                    label: const Text('BSNL Portal'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: onOpenCbc,
-                    icon: const Icon(Icons.receipt_long_outlined, size: 16),
-                    label: const Text('CBC List'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: onOpenCtopup,
-                    icon: const Icon(Icons.payments_outlined, size: 16),
-                    label: const Text('C-TopUp'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String t) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(20)),
-      child: Text(t, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }

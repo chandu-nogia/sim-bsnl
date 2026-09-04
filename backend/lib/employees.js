@@ -25,6 +25,8 @@ function publicEmployee(row, locNames = {}) {
     assignedLocations: assigned,
     assignedLocationNames: locationName ? [locationName] : assigned.map((id) => locNames[id] || `#${id}`),
     status: row.status === 'inactive' ? 'inactive' : 'active',
+    mobile: row.mobile || '',
+    lastLogin: row.lastLogin || '',
     createdAt: row.createdAt || '',
     updatedAt: row.updatedAt || '',
   };
@@ -37,14 +39,61 @@ async function locationNamesMap(db) {
   return m;
 }
 
-async function listEmployees(db) {
+async function listEmployees(db, query = {}) {
   const names = await locationNamesMap(db);
-  const rows = await db
-    .collection('users')
-    .find({ role: { $in: ['employee', 'admin'] } })
-    .sort({ role: 1, email: 1 })
-    .toArray();
-  return rows.map((r) => publicEmployee(r, names));
+  const q = { role: { $in: ['employee', 'admin'] } };
+  const loc = Number.parseInt(String(query.locationId || ''), 10) || 0;
+  if (loc) q.locationId = loc;
+  const status = String(query.status || '').trim();
+  if (status) q.status = status;
+  const role = String(query.role || '').trim();
+  if (role) q.role = role;
+  const search = String(query.q || query.search || '').trim();
+  if (search) {
+    const rx = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    const n = Number.parseInt(search, 10) || 0;
+    q.$or = [{ name: rx }, { email: rx }, { mobile: rx }, ...(n ? [{ id: n }] : [])];
+  }
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(100, Math.max(10, Number(query.limit) || 50));
+  const skip = (page - 1) * limit;
+  const col = db.collection('users');
+  const total = await col.countDocuments(q);
+  const rows = await col.find(q).sort({ role: 1, name: 1 }).skip(skip).limit(limit).toArray();
+  return { rows: rows.map((r) => publicEmployee(r, names)), total, page, limit };
+}
+
+async function employeeDetail(db, user, idRaw) {
+  const emailKey = String(idRaw || '').trim().toLowerCase();
+  const row = await db.collection('users').findOne({
+    $or: [{ email: emailKey }, { id: Number.parseInt(emailKey, 10) || -1 }],
+  });
+  if (!row) return { status: 404, json: { ok: false, error: 'Employee nahi mila' } };
+  const names = await locationNamesMap(db);
+  const locId = Number(row.locationId) || 0;
+  const createdBy = String(row.email || '').toLowerCase();
+  const alive = { $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }] };
+  const [sims, cbc, ctopup, activity] = await Promise.all([
+    db.collection('sims').countDocuments({ ...alive, createdBy }),
+    db.collection('cbc').countDocuments({ ...alive, createdBy }),
+    db.collection('ctopup').countDocuments({ ...alive, createdBy }),
+    db.collection('activity').find({ email: row.email }).sort({ id: -1 }).limit(20).toArray(),
+  ]);
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      employee: publicEmployee(row, names),
+      summary: { sims, cbc, ctopup, locationId: locId },
+      activity: activity.map((a) => ({
+        id: a.id,
+        at: a.at,
+        action: a.action,
+        section: a.section,
+        detail: a.detail,
+      })),
+    },
+  };
 }
 
 async function addEmployee(db, actor, body) {
@@ -222,6 +271,7 @@ async function deleteEmployee(db, actor, idRaw) {
 module.exports = {
   publicEmployee,
   listEmployees,
+  employeeDetail,
   addEmployee,
   updateEmployee,
   resetPassword,

@@ -263,9 +263,22 @@ async function adminSummary(db) {
     empActivity[k] = (empActivity[k] || 0) + 1;
   }
 
+  const todayStart = isoDay();
+  const [pendingTop, failedTop, pendingClose, todayActs] = await Promise.all([
+    db.collection('ctopup').countDocuments(withAlive({ status: 'Pending' })),
+    db.collection('ctopup').countDocuments(withAlive({ status: 'Failed' })),
+    db.collection('closing').countDocuments({ status: 'pending' }),
+    db.collection('activity').countDocuments({ at: { $gte: `${todayStart}T00:00:00.000Z` } }),
+  ]);
+  const activeEmployees = employees.filter((e) => e.status !== 'inactive').length;
+
   return {
     locations: locations.filter((l) => l.status !== 'inactive').length,
     employees: employees.length,
+    activeEmployees,
+    pending: pendingTop + pendingClose,
+    failed: failedTop,
+    todayActivity: todayActs,
     totals,
     byLocation: list,
     newUsersByEmployee: employees.map((e) => ({

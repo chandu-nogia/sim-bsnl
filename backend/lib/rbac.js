@@ -28,7 +28,7 @@ function listScope(req) {
   }
   const requested = requestedLocationId(req, {});
   if (requested) return { locationId: requested };
-  return { empty: true };
+  return { all: true };
 }
 
 function writeScope(req, body) {

@@ -243,14 +243,27 @@ function readToken(req) {
   }
 }
 
-async function login(db, body) {
+async function login(db, body, req) {
   const email = String(body?.email || '').trim().toLowerCase();
   const password = String(body?.password || '');
+  const ip = String(req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || '')
+    .split(',')[0]
+    .trim();
   if (!email || !password) {
     return { status: 400, json: { ok: false, error: 'Email aur password likho' } };
   }
   const user = await db.collection('users').findOne({ email });
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    await logActivity(db, {
+      email,
+      role: user?.role || '',
+      name: user?.name || '',
+      action: 'login-fail',
+      section: 'auth',
+      locationId: user?.locationId,
+      ip,
+      detail: `Failed login for ${email}`,
+    });
     return { status: 401, json: { ok: false, error: 'Galat email ya password' } };
   }
   if (user.status === 'inactive') {
@@ -266,6 +279,9 @@ async function login(db, body) {
       user.locationName = loc?.name || user.locationName || '';
     }
   }
+  const now = new Date().toISOString();
+  await db.collection('users').updateOne({ email: user.email }, { $set: { lastLogin: now } });
+  user.lastLogin = now;
   await logActivity(db, {
     email: user.email,
     role: user.role,
@@ -274,6 +290,7 @@ async function login(db, body) {
     section: 'auth',
     locationId: user.locationId,
     locationName: user.locationName,
+    ip,
     detail: `${user.name || user.email} logged in`,
   });
   return {

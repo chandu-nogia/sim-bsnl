@@ -115,6 +115,8 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       }
       const employee = String(scope.employee || '').trim().toLowerCase();
       if (employee) q.createdBy = employee;
+      const status = String(scope.status || '').trim();
+      if (status) q.status = status;
       const page = Math.max(1, Number(scope.page) || 1);
       const limit = Math.min(500, Math.max(20, Number(scope.limit) || 200));
       const skip = (page - 1) * limit;

@@ -80,9 +80,9 @@ class AuthStore extends ChangeNotifier {
     locationId = out.locationId;
     locationName = out.locationName;
     assignedLocations = out.assignedLocations;
-    selectedLocationId = out.assignedLocations.isNotEmpty
-        ? out.assignedLocations.first
-        : out.locationId;
+    selectedLocationId = role == 'admin'
+        ? null
+        : (out.assignedLocations.isNotEmpty ? out.assignedLocations.first : out.locationId);
     await _persist();
     notifyListeners();
   }
@@ -143,8 +143,10 @@ class AuthStore extends ChangeNotifier {
     if (assignedLocations.isEmpty && locationId != null) {
       assignedLocations = [locationId!];
     }
-    if (selectedLocationId == null ||
-        (!isAdmin && assignedLocations.isNotEmpty && !assignedLocations.contains(selectedLocationId))) {
+    if (isAdmin) {
+      // keep selectedLocationId only if still valid; default all-locations view
+    } else if (selectedLocationId == null ||
+        (assignedLocations.isNotEmpty && !assignedLocations.contains(selectedLocationId))) {
       selectedLocationId = assignedLocations.isNotEmpty ? assignedLocations.first : locationId;
     }
     final newToken = '${user['token'] ?? ''}';

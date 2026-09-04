@@ -81,4 +81,26 @@ async function restoreRow(db, user, typeRaw, idRaw) {
   return { status: 200, json: { ok: true } };
 }
 
-module.exports = { listDeleted, restoreRow };
+async function purgeRow(db, user, typeRaw, idRaw) {
+  if (user.role !== 'admin') return { status: 403, json: { ok: false, error: 'Sirf admin permanent delete kar sakta hai' } };
+  const type = resolveType(typeRaw);
+  const id = Number.parseInt(String(idRaw), 10);
+  if (!type || !id) return { status: 400, json: { ok: false, error: 'Invalid recycle item' } };
+  const row = await db.collection(type).findOne({ id, deletedAt: { $exists: true, $ne: null } });
+  if (!row) return { status: 404, json: { ok: false, error: 'Recycle item nahi mila' } };
+  await db.collection(type).deleteOne({ _id: row._id });
+  await logActivity(db, {
+    email: user.email,
+    role: user.role,
+    name: user.name,
+    action: 'delete',
+    section: 'recycle',
+    locationId: row.locationId,
+    locationName: row.locationName,
+    recordId: id,
+    detail: `${user.name || user.email} permanently deleted ${type} #${id}`,
+  });
+  return { status: 200, json: { ok: true } };
+}
+
+module.exports = { listDeleted, restoreRow, purgeRow };

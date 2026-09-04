@@ -15,6 +15,8 @@ async function logActivity(db, row) {
     section: row.section || '',
     locationId: row.locationId ? Number(row.locationId) : null,
     locationName: row.locationName || '',
+    recordId: row.recordId || null,
+    ip: row.ip || '',
     detail: row.detail || '',
   };
   await db.collection('activity').insertOne(saved);
@@ -32,6 +34,8 @@ function publicActivity(row) {
     section: row.section || '',
     locationId: row.locationId ? Number(row.locationId) : null,
     locationName: row.locationName || '',
+    recordId: row.recordId || null,
+    ip: row.ip || '',
     detail: row.detail || '',
   };
 }

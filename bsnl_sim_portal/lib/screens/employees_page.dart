@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../app_theme.dart';
 import '../services/api_service.dart';
+import '../screens/employee_detail_page.dart';
 import '../state/auth_store.dart';
-import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
 class EmployeesPage extends StatefulWidget {
@@ -35,13 +35,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
       final rows = await widget.auth.api.listEmployees(widget.auth.apiBase);
       final locs = await widget.auth.api.listLocations(widget.auth.apiBase);
       setState(() {
-        final loc = widget.auth.isAdmin ? widget.auth.effectiveLocationId : null;
-        _rows = loc == null
-            ? rows
-            : [
-                for (final r in rows)
-                  if ('${r['role']}' == 'admin' || asInt(r['locationId']) == loc) r,
-              ];
+        _rows = rows;
         _locations = locs;
       });
     } catch (e) {
@@ -140,7 +134,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
             children: [
               const Expanded(
                 child: Text(
-                  'Har employee ki ek location type karo. Sirf usi jagah ka Portal / CBC / C-TopUp dikhega.',
+                  'One global employee list. Location is a column — not a nested menu.',
                   style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -172,27 +166,38 @@ class _EmployeesPageState extends State<EmployeesPage> {
                             headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
                             headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                             columns: const [
-                              DataColumn(label: Text('Name')),
+                              DataColumn(label: Text('ID')),
+                              DataColumn(label: Text('Employee')),
                               DataColumn(label: Text('Email')),
-                              DataColumn(label: Text('Assigned Location')),
+                              DataColumn(label: Text('Location')),
                               DataColumn(label: Text('Role')),
                               DataColumn(label: Text('Status')),
-                              DataColumn(label: Text('Created')),
+                              DataColumn(label: Text('Last login')),
                               DataColumn(label: Text('Actions')),
                             ],
                             rows: [
                               for (final row in _rows)
                                 DataRow(
                                   cells: [
+                                    DataCell(Text('${row['id'] ?? '—'}')),
                                     DataCell(Text('${row['name'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w700))),
                                     DataCell(Text('${row['email'] ?? ''}')),
-                                    DataCell(Text(((row['assignedLocationNames'] as List?) ?? []).join(', '))),
+                                    DataCell(Text('${row['locationName'] ?? (((row['assignedLocationNames'] as List?) ?? []).join(', '))}')),
                                     DataCell(Text('${row['role'] ?? ''}')),
                                     DataCell(Text('${row['status'] ?? 'active'}')),
-                                    DataCell(Text('${row['createdAt'] ?? ''}'.split('T').first)),
+                                    DataCell(Text('${row['lastLogin'] ?? ''}'.split('T').first)),
                                     DataCell(
                                       Row(
                                         children: [
+                                          IconButton(
+                                            tooltip: 'View',
+                                            onPressed: () {
+                                              Navigator.of(context).push(
+                                                fadeRoute(EmployeeDetailPage(auth: widget.auth, id: '${row['email']}')),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.visibility_outlined),
+                                          ),
                                           IconButton(
                                             tooltip: 'Edit / assign',
                                             onPressed: '${row['role']}' == 'admin' ? null : () => _edit(row),

@@ -4,7 +4,9 @@ async function ensureIndexes(db) {
   const jobs = [
     db.collection('users').createIndex({ email: 1 }, { unique: true }),
     db.collection('users').createIndex({ role: 1, status: 1 }),
-    db.collection('users').createIndex({ assignedLocations: 1 }),
+    db.collection('users').createIndex({ name: 1 }),
+    db.collection('users').createIndex({ mobile: 1 }),
+    db.collection('users').createIndex({ locationId: 1, status: 1 }),
     db.collection('locations').createIndex({ id: 1 }, { unique: true }),
     db.collection('locations').createIndex({ code: 1 }),
     db.collection('locations').createIndex({ status: 1 }),

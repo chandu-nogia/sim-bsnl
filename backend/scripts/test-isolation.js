@@ -26,6 +26,7 @@ assert.strictEqual(rbac.assertRowLocation(req, { locationId: 2 }, 2), null);
 const adminReq = { user: { role: 'admin' }, headers: {}, query: { locationId: '3' } };
 assert.strictEqual(rbac.listScope(adminReq).locationId, 3);
 const emptyAdmin = { user: { role: 'admin' }, headers: {}, query: {} };
-assert.strictEqual(rbac.mongoListQuery(rbac.listScope(emptyAdmin)).id.$in.length, 0);
+assert.strictEqual(rbac.listScope(emptyAdmin).all, true);
+assert.deepStrictEqual(rbac.mongoListQuery({ all: true }), {});
 
 console.log('isolation checks ok');

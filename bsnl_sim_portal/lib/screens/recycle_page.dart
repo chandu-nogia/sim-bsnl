@@ -50,6 +50,27 @@ class _RecyclePageState extends State<RecyclePage> {
     }
   }
 
+  Future<void> _purge(Map<String, dynamic> row) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permanent delete?'),
+        content: const Text('This cannot be undone. Audit log will record the delete.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.auth.api.purgeRecycle(widget.auth.apiBase, '${row['type']}', int.parse('${row['id']}'));
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -70,7 +91,16 @@ class _RecyclePageState extends State<RecyclePage> {
               child: ListTile(
                 title: Text('${r['name'] ?? ''}  ·  ${r['type']}', style: const TextStyle(fontWeight: FontWeight.w800)),
                 subtitle: Text('${r['locationName'] ?? ''}  ·  ${r['deletedAt'] ?? ''}'),
-                trailing: TextButton(onPressed: () => _restore(r), child: const Text('Restore')),
+                trailing: Wrap(
+                  children: [
+                    TextButton(onPressed: () => _restore(r), child: const Text('Restore')),
+                    if (widget.auth.isAdmin)
+                      TextButton(
+                        onPressed: () => _purge(r),
+                        child: const Text('Delete forever'),
+                      ),
+                  ],
+                ),
               ),
             ),
       ],

@@ -28,14 +28,16 @@ const {
 const { cbc, ctopup } = require('./lib/records');
 const { listActivity } = require('./lib/activity');
 const { adminSummary, locationSummary } = require('./lib/summary');
-const { listEmployees, addEmployee, updateEmployee, resetPassword, deleteEmployee } = require('./lib/employees');
+const { listEmployees, employeeDetail, addEmployee, updateEmployee, resetPassword, deleteEmployee } = require('./lib/employees');
 const { buildReport } = require('./lib/reports');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
 const { changePassword, updateMe, forgotPassword } = require('./lib/account');
 const { previewLocation } = require('./lib/location_resolve');
-const { listDeleted, restoreRow } = require('./lib/recycle');
+const { listDeleted, restoreRow, purgeRow } = require('./lib/recycle');
 const { getStock, saveStock, listClosing, addClosing, reviewClosing, importRows, todayStats } = require('./lib/shop');
+const { globalSearch } = require('./lib/search');
+const { listNotifications, systemHealth } = require('./lib/ops');
 
 const PORT = Number(process.env.PORT) || 5050;
 const WEB_DIR = path.join(__dirname, '..', 'bsnl_sim_portal', 'build', 'web');
@@ -89,6 +91,7 @@ function scoped(req) {
     from: req.query?.from || '',
     to: req.query?.to || '',
     employee: req.query?.employee || '',
+    status: req.query?.status || '',
     page: req.query?.page,
     limit: req.query?.limit,
   };
@@ -123,7 +126,7 @@ async function writeMeta(req, body) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-6' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'locations-7' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -140,7 +143,7 @@ app.post('/api/login', async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const locked = loginGuard(req, email);
     if (!locked.ok) return res.status(429).json({ ok: false, error: locked.error });
-    const out = await login(await getDb(), req.body);
+    const out = await login(await getDb(), req.body, req);
     if (out.status === 200) loginClear(req, email);
     send(res, out);
   } catch (e) {
@@ -191,6 +194,57 @@ app.get('/api/recycle', requireUser, async (req, res) => {
 app.post('/api/recycle/:type/:id/restore', requireUser, async (req, res) => {
   try {
     send(res, await restoreRow(await getDb(), req.user, req.params.type, req.params.id));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.delete('/api/recycle/:type/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    send(res, await purgeRow(await getDb(), req.user, req.params.type, req.params.id));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/search', requireUser, async (req, res) => {
+  try {
+    send(res, await globalSearch(await getDb(), req.user, req.query?.q || req.query?.search || ''));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/notifications', requireUser, async (req, res) => {
+  try {
+    send(res, await listNotifications(await getDb(), req.user));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/system', requireUser, requireAdmin, async (_req, res) => {
+  try {
+    send(res, await systemHealth(await getDb()));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/logout', requireUser, async (req, res) => {
+  try {
+    const { logActivity } = require('./lib/activity');
+    await logActivity(await getDb(), {
+      email: req.user.email,
+      role: req.user.role,
+      name: req.user.name,
+      action: 'logout',
+      section: 'auth',
+      locationId: req.user.locationId,
+      locationName: req.user.locationName,
+      detail: `${req.user.name || req.user.email} logged out`,
+    });
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -314,10 +368,18 @@ app.delete('/api/locations/:id', requireUser, requireAdmin, async (req, res) => 
   }
 });
 
-app.get('/api/employees', requireUser, requireAdmin, async (_req, res) => {
+app.get('/api/employees', requireUser, requireAdmin, async (req, res) => {
   try {
-    const rows = await listEmployees(await getDb());
-    res.json({ ok: true, rows });
+    const out = await listEmployees(await getDb(), req.query);
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/employees/:id', requireUser, requireAdmin, async (req, res) => {
+  try {
+    send(res, await employeeDetail(await getDb(), req.user, req.params.id));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }

@@ -162,6 +162,7 @@ class ApiService {
     String? from,
     String? to,
     String? employee,
+    String? status,
     int? page,
     int? limit,
   }) async {
@@ -175,6 +176,7 @@ class ApiService {
             'from': from,
             'to': to,
             'employee': employee,
+            'status': status,
             'page': page?.toString(),
             'limit': limit?.toString(),
           }),
@@ -312,8 +314,62 @@ class ApiService {
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Jagah delete fail'}');
   }
 
-  Future<List<Map<String, dynamic>>> listEmployees(String base) =>
-      listRows(base, '/api/employees');
+  Future<List<Map<String, dynamic>>> listEmployees(
+    String base, {
+    String? q,
+    int? locationId,
+    String? status,
+    String? role,
+    int? page,
+    int? limit,
+  }) =>
+      listRows(
+        base,
+        '/api/employees',
+        q: q,
+        locationId: locationId,
+        status: status,
+        page: page,
+        limit: limit,
+      );
+
+  Future<Map<String, dynamic>> employeeDetail(String base, String id) async {
+    final json = await _send(http.get(_uri(base, '/api/employees/${Uri.encodeComponent(id)}'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Employee fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> search(String base, String q) async {
+    final json = await _send(
+      http.get(_uri(base, _withQuery('/api/search', {'q': q})), headers: _headers()),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Search fail'}');
+    return json['groups'] is Map ? Map<String, dynamic>.from(json['groups'] as Map) : {};
+  }
+
+  Future<List<Map<String, dynamic>>> notifications(String base) async {
+    final json = await _send(http.get(_uri(base, '/api/notifications'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Notifications fail'}');
+    final rows = (json['rows'] as List?) ?? [];
+    return [for (final r in rows) Map<String, dynamic>.from(r as Map)];
+  }
+
+  Future<Map<String, dynamic>> system(String base) async {
+    final json = await _send(http.get(_uri(base, '/api/system'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Health fail'}');
+    return json;
+  }
+
+  Future<void> logoutAudit(String base) async {
+    try {
+      await _send(http.post(_uri(base, '/api/logout'), headers: _headers()));
+    } catch (_) {}
+  }
+
+  Future<void> purgeRecycle(String base, String type, int id) async {
+    final json = await _send(http.delete(_uri(base, '/api/recycle/$type/$id'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Delete fail'}');
+  }
 
   Future<void> saveEmployee(
     String base, {
