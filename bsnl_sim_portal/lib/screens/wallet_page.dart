@@ -112,7 +112,14 @@ class _WalletPageState extends State<WalletPage> {
       if (withdraw) {
         await widget.auth.api.withdrawServiceMoney(widget.auth.apiBase, _service, body['amount'] ?? '', reason: body['remark'] ?? '');
       } else {
-        await widget.auth.api.addServiceMoney(widget.auth.apiBase, _service, body['amount'] ?? '', remark: body['remark'] ?? '');
+        await widget.auth.api.addServiceMoney(
+          widget.auth.apiBase,
+          _service,
+          body['amount'] ?? '',
+          remark: body['remark'] ?? '',
+          paymentMethod: body['paymentMethod'] ?? '',
+          referenceId: body['referenceId'] ?? '',
+        );
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(withdraw ? 'Amount withdraw ho gaya' : 'Amount add ho gaya')));
@@ -462,6 +469,8 @@ class _WalletForm extends StatefulWidget {
 class _WalletFormState extends State<_WalletForm> {
   late final TextEditingController _amount;
   late final TextEditingController _remark;
+  late final TextEditingController _reference;
+  String _method = 'UPI';
   late DateTime _date;
 
   @override
@@ -469,6 +478,7 @@ class _WalletFormState extends State<_WalletForm> {
     super.initState();
     _amount = TextEditingController();
     _remark = TextEditingController();
+    _reference = TextEditingController();
     _date = DateTime.now();
   }
 
@@ -476,6 +486,7 @@ class _WalletFormState extends State<_WalletForm> {
   void dispose() {
     _amount.dispose();
     _remark.dispose();
+    _reference.dispose();
     super.dispose();
   }
 
@@ -509,7 +520,24 @@ class _WalletFormState extends State<_WalletForm> {
               decoration: const InputDecoration(labelText: 'Custom amount', prefixText: '₹ '),
             ),
             const SizedBox(height: 12),
-            TextField(controller: _remark, decoration: InputDecoration(labelText: widget.withdraw ? 'Reason' : 'Remark / source')),
+            if (!widget.withdraw)
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use
+                value: _method,
+                decoration: const InputDecoration(labelText: 'Payment method'),
+                items: const [
+                  DropdownMenuItem(value: 'UPI', child: Text('UPI')),
+                  DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                  DropdownMenuItem(value: 'Bank', child: Text('Bank transfer')),
+                  DropdownMenuItem(value: 'Other', child: Text('Other')),
+                ],
+                onChanged: (v) => setState(() => _method = v ?? 'UPI'),
+              ),
+            if (!widget.withdraw) const SizedBox(height: 12),
+            if (!widget.withdraw)
+              TextField(controller: _reference, decoration: const InputDecoration(labelText: 'Reference / UTR')),
+            if (!widget.withdraw) const SizedBox(height: 12),
+            TextField(controller: _remark, decoration: InputDecoration(labelText: widget.withdraw ? 'Reason' : 'Note')),
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -529,6 +557,8 @@ class _WalletFormState extends State<_WalletForm> {
           onPressed: () => Navigator.pop(context, {
             'amount': _amount.text.trim(),
             'remark': _remark.text.trim(),
+            'paymentMethod': _method,
+            'referenceId': _reference.text.trim(),
             'date': DateFormat('yyyy-MM-dd').format(_date),
           }),
           child: Text(widget.withdraw ? 'Withdraw' : 'Add'),

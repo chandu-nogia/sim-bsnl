@@ -18,6 +18,8 @@ class _SettingsPageState extends State<SettingsPage> {
   final _current = TextEditingController();
   final _next = TextEditingController();
   late final TextEditingController _url;
+  final _cbpRate = TextEditingController(text: '1.00');
+  final _topRate = TextEditingController(text: '1.00');
   bool _busy = false;
 
   @override
@@ -25,6 +27,32 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _name = TextEditingController(text: widget.store.auth.name);
     _url = TextEditingController(text: widget.store.auth.apiUrl ?? widget.store.apiBase);
+    _loadRates();
+  }
+
+  Future<void> _loadRates() async {
+    try {
+      final json = await widget.store.auth.api.appConfig(widget.store.auth.apiBase);
+      if (!mounted) return;
+      _cbpRate.text = '${json['cbpCommissionPercent'] ?? json['commissionPercent'] ?? 1}';
+      _topRate.text = '${json['ctopupCommissionPercent'] ?? json['commissionPercent'] ?? 1}';
+    } catch (_) {}
+  }
+
+  Future<void> _saveRates() async {
+    setState(() => _busy = true);
+    try {
+      await widget.store.auth.api.saveCommissionRates(
+        widget.store.auth.apiBase,
+        cbpRate: num.tryParse(_cbpRate.text.trim()) ?? 1,
+        ctopupRate: num.tryParse(_topRate.text.trim()) ?? 1,
+      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Commission rates saved')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -33,6 +61,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _current.dispose();
     _next.dispose();
     _url.dispose();
+    _cbpRate.dispose();
+    _topRate.dispose();
     super.dispose();
   }
 
@@ -108,6 +138,34 @@ class _SettingsPageState extends State<SettingsPage> {
                 TextField(controller: _next, obscureText: true, decoration: const InputDecoration(labelText: 'New password')),
                 const SizedBox(height: 12),
                 FilledButton(onPressed: _busy ? null : _savePassword, child: const Text('Update password')),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Commission rates', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                const SizedBox(height: 8),
+                const Text('CBP aur CTOPUP alag rates. Code change ki zaroorat nahi.', style: TextStyle(color: BsnlColors.muted)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _cbpRate,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'CBP commission %', suffixText: '%'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _topRate,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'CTOPUP commission %', suffixText: '%'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(onPressed: _busy ? null : _saveRates, child: const Text('Save rates')),
               ],
             ),
           ),

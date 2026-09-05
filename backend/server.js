@@ -45,7 +45,7 @@ const {
   rebuildCbpFromOpening,
   ensureWallet,
 } = require('./lib/service_wallet');
-const { publicConfig } = require('./lib/commission');
+const { publicConfig, setRates, ensureRates } = require('./lib/commission');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
 const { changePassword, updateMe } = require('./lib/account');
@@ -140,7 +140,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-12' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-13' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -251,7 +251,21 @@ app.put('/api/wallet', requireUser, async (req, res) => {
 });
 
 app.get('/api/config', requireUser, async (_req, res) => {
-  res.json({ ok: true, ...publicConfig() });
+  try {
+    res.json({ ok: true, ...(await publicConfig(await getDb())) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.put('/api/config/commission', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await setRates(await getDb(), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
 });
 
 app.get('/api/wallet/summary', requireUser, async (_req, res) => {
@@ -510,6 +524,7 @@ async function start() {
     const { backfillDateKeys } = require('./lib/dates');
     await backfillDateKeys(db);
     await ensureOpeningCredit(db);
+    await ensureRates(db);
     await ensureWallet(db, 'CBP');
     await ensureWallet(db, 'CTOPUP');
     await migrateLegacy(db);

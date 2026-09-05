@@ -36,9 +36,17 @@ function rupeeNum(paise) {
   return (Number(paise) || 0) / 100;
 }
 
-/** Backend-only automatic commission: 1% of amount, rounded to paise. */
-function configuredCommissionPaise(amountPaise) {
-  return Math.round((Number(amountPaise) || 0) / 100);
+/** 100 bps = 1.00%. Commission = amountPaise * rateBps / 10000, integer paise. */
+function commissionFromRateBps(amountPaise, rateBps) {
+  const amount = Number(amountPaise) || 0;
+  const bps = Number(rateBps);
+  const rate = Number.isFinite(bps) && bps >= 0 ? Math.round(bps) : 100;
+  return Math.round((amount * rate) / 10000);
+}
+
+/** Default 1% when no settings row is loaded. */
+function configuredCommissionPaise(amountPaise, rateBps = 100) {
+  return commissionFromRateBps(amountPaise, rateBps);
 }
 
 /**
@@ -76,9 +84,14 @@ function computeUsage({ previousPaise, amountPaise, commissionPaise }) {
  * Client remaining/actual/commission is ignored so a typed opening balance
  * cannot credit the wallet.
  */
-function resolveUsageCommission({ amountPaise }) {
+function resolveUsageCommission({ amountPaise, rateBps = 100 }) {
   const amount = Number(amountPaise) || 0;
-  return { ok: true, commissionPaise: configuredCommissionPaise(amount), source: 'configured' };
+  return {
+    ok: true,
+    commissionPaise: commissionFromRateBps(amount, rateBps),
+    source: 'configured',
+    rateBps: Number.isFinite(Number(rateBps)) ? Math.round(Number(rateBps)) : 100,
+  };
 }
 
 function validateUsage({ previousPaise, amountPaise, actualPaise, commissionPaise }) {
@@ -101,11 +114,12 @@ function validateUsage({ previousPaise, amountPaise, actualPaise, commissionPais
       calc,
     };
   }
-  if (calc.previousPaise < calc.amountPaise) {
+  const netRequired = calc.amountPaise - calc.commissionPaise;
+  if (netRequired > calc.previousPaise) {
     return {
       ok: false,
       code: 'INSUFFICIENT_BALANCE',
-      error: `Insufficient wallet balance (available ₹${calc.previous}, amount ₹${calc.amount})`,
+      error: `Insufficient wallet balance (available ₹${calc.previous}, required ₹${fromPaise(netRequired)})`,
       calc,
     };
   }
@@ -161,6 +175,7 @@ module.exports = {
   fromPaise,
   paiseOf,
   rupeeNum,
+  commissionFromRateBps,
   configuredCommissionPaise,
   computeUsage,
   resolveUsageCommission,

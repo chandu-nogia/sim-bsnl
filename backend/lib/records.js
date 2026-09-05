@@ -8,7 +8,7 @@ const { withAlive } = require('./alive');
 const { dateKeyOf, applyDateRange, applyAmountRange, sortSpec } = require('./dates');
 const { moneyNumber, moneyText, parseAmount } = require('./password');
 const { publicConfig } = require('./commission');
-const { applyUsage, reverseUsage, isFailedStatus, snapshotBoth } = require('./service_wallet');
+const { applyUsage, reverseUsage, isFailedStatus, isPendingStatus, snapshotBoth } = require('./service_wallet');
 const { usageApiFields } = require('./money');
 
 function moneyFields(b) {
@@ -173,9 +173,9 @@ function applyCalc(row, calc) {
 }
 
 async function applyRowUsage(db, section, row, meta, ref) {
-  if (!(moneyNumber(row.amountNum) > 0) || isFailedStatus(row.status)) {
+  if (!(moneyNumber(row.amountNum) > 0) || isFailedStatus(row.status) || isPendingStatus(row.status)) {
     row.walletApplied = false;
-    row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : 'SUCCESS';
+    row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : (isPendingStatus(row.status) ? 'PENDING' : 'SUCCESS');
     return { status: 200 };
   }
   const usage = await applyUsage(db, section, {
@@ -225,7 +225,7 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         totalCommission: svc.totalCommissionNum,
         totalAdded: svc.totalCreditsNum,
         totalUsed: svc.totalTransactionAmountNum,
-        ...publicConfig(),
+        ...(await publicConfig(db)),
       };
     },
     async add(db, body, meta) {
@@ -326,7 +326,7 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         && existing.transactionStatus !== 'FAILED'
         && existing.transactionStatus !== 'REVERSED'
         && !isFailedStatus(existing.status);
-      const shouldApply = moneyNumber(row.amountNum) > 0 && !isFailedStatus(row.status);
+      const shouldApply = moneyNumber(row.amountNum) > 0 && !isFailedStatus(row.status) && !isPendingStatus(row.status);
       if (wasApplied && (amountChanged || (statusChanged && isFailedStatus(row.status)))) {
         return {
           status: 400,

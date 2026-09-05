@@ -18,6 +18,32 @@ function dbReady() {
   return db;
 }
 
+test('statement chain ends at 23069.05', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '24930.25' }, m);
+  const a = await applyUsage(db, 'CBP', { amount: '315', transactionId: 'ST-2' }, m);
+  assert.equal(a.status, 200, a.json && a.json.error);
+  assert.equal(a.json.commission, 3.15);
+  assert.equal(a.json.newBalance, 24618.4);
+  const b = await applyUsage(db, 'CBP', { amount: '590', transactionId: 'ST-3' }, m);
+  assert.equal(b.json.commission, 5.9);
+  assert.equal(b.json.newBalance, 24034.3);
+  const c = await applyUsage(db, 'CBP', { amount: '975', transactionId: 'ST-4' }, m);
+  assert.equal(c.json.commission, 9.75);
+  assert.equal(c.json.newBalance, 23069.05);
+  assert.equal(c.json.wallet.currentBalancePaise, 2306905);
+});
+
+test('add money 25000 + 5000 = 30000', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '25000' }, m);
+  const out = await addMoney(db, 'CBP', { amount: '5000', paymentMethod: 'UPI', referenceId: 'UTR1' }, m);
+  assert.equal(out.status, 200);
+  assert.equal(out.json.wallet.currentBalancePaise, 3000000);
+});
+
 test('Test 4: multiple wallet credits accumulate', async () => {
   const db = dbReady();
   const m = meta();

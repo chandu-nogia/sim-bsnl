@@ -457,12 +457,26 @@ class ApiService {
     );
   }
 
-  Future<Map<String, dynamic>> addServiceMoney(String base, String service, String amount, {String remark = '', String source = 'manual'}) async {
+  Future<Map<String, dynamic>> addServiceMoney(
+    String base,
+    String service,
+    String amount, {
+    String remark = '',
+    String source = 'manual',
+    String paymentMethod = '',
+    String referenceId = '',
+  }) async {
     final json = await _send(
       http.post(
         _uri(base, '/api/wallet/${_servicePath(service)}/add-money'),
         headers: _headers(),
-        body: jsonEncode({'amount': amount, 'remark': remark, 'source': source}),
+        body: jsonEncode({
+          'amount': amount,
+          'remark': remark,
+          'source': source,
+          'paymentMethod': paymentMethod,
+          'referenceId': referenceId,
+        }),
       ),
     );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Add money fail'}');
@@ -493,6 +507,21 @@ class ApiService {
       ),
     );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Reversal fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> saveCommissionRates(String base, {required num cbpRate, required num ctopupRate}) async {
+    final json = await _send(
+      http.put(
+        _uri(base, '/api/config/commission'),
+        headers: _headers(),
+        body: jsonEncode({
+          'cbpCommissionPercent': cbpRate,
+          'ctopupCommissionPercent': ctopupRate,
+        }),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Commission rate save fail'}');
     return json;
   }
 

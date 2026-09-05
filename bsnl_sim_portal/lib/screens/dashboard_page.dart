@@ -199,6 +199,21 @@ class _DashboardHomeState extends State<DashboardHome> {
                 onTap: () => widget.onOpenSection?.call('wallet'),
               ),
               _Kpi(
+                title: 'Total Added Money',
+                value: rupee(asNum(_totals['totalAdded'])),
+                subtitle: 'Wallet deposits',
+                icon: Icons.add_card_outlined,
+                colors: const [Color(0xFF1D4ED8), Color(0xFF38BDF8)],
+                onTap: () => widget.onOpenSection?.call('wallet'),
+              ),
+              _Kpi(
+                title: "Today's Commission",
+                value: rupee(asNum(_today['combinedCommission'])),
+                subtitle: 'Today successful extra',
+                icon: Icons.trending_up_outlined,
+                colors: const [Color(0xFFB45309), Color(0xFFFBBF24)],
+              ),
+              _Kpi(
                 title: "Today's Transactions",
                 value: '${asNum(_data['todayTxns']).round()}',
                 subtitle: 'Portal / CBP / CTOPUP today',

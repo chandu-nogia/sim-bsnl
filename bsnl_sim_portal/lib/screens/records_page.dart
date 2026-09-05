@@ -554,7 +554,7 @@ class _RecordsPageState extends State<RecordsPage> {
         child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
       );
     }
-    if (f.key == 'amount' || f.key == 'commission' || f.key == 'balance' || f.key == 'actualBalance') {
+    if (f.key == 'amount' || f.key == 'commission' || f.key == 'balance' || f.key == 'actualBalance' || f.key == 'previousBalance') {
       final reversed = '${row['transactionStatus'] ?? ''}' == 'REVERSED';
       return Text(
         rupee(asNum(row[f.key] ?? row['${f.key}Num'])),

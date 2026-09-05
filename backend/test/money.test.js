@@ -8,6 +8,7 @@ const {
   validateUsage,
   resolveUsageCommission,
   configuredCommissionPaise,
+  commissionFromRateBps,
   toPaise,
   fromPaise,
 } = require('../lib/money');
@@ -89,6 +90,38 @@ test('usage cannot increase wallet', () => {
     commissionPaise: 60000,
   });
   assert.equal(checked.ok, false);
+});
+
+test('statement Test 1: 24930.25 - 315 + 3.15 = 24618.40', () => {
+  assert.equal(commissionFromRateBps(31500, 100), 315);
+  const calc = computeUsage({ previousPaise: 2493025, amountPaise: 31500, commissionPaise: 315 });
+  assert.equal(calc.commission, '3.15');
+  assert.equal(calc.newBalancePaise, 2461840);
+  assert.equal(calc.newBalance, '24618.40');
+});
+
+test('statement Test 2: 24618.40 - 590 + 5.90 = 24034.30', () => {
+  assert.equal(commissionFromRateBps(59000, 100), 590);
+  const calc = computeUsage({ previousPaise: 2461840, amountPaise: 59000, commissionPaise: 590 });
+  assert.equal(calc.commission, '5.90');
+  assert.equal(calc.newBalancePaise, 2403430);
+  assert.equal(calc.newBalance, '24034.30');
+});
+
+test('statement Test 3: 24034.30 - 975 + 9.75 = 23069.05', () => {
+  assert.equal(commissionFromRateBps(97500, 100), 975);
+  const calc = computeUsage({ previousPaise: 2403430, amountPaise: 97500, commissionPaise: 975 });
+  assert.equal(calc.commission, '9.75');
+  assert.equal(calc.newBalancePaise, 2306905);
+  assert.equal(calc.newBalance, '23069.05');
+});
+
+test('statement Test 5: net 594 > 500 rejects', () => {
+  const comm = commissionFromRateBps(60000, 100);
+  assert.equal(comm, 600);
+  const checked = validateUsage({ previousPaise: 50000, amountPaise: 60000, commissionPaise: comm });
+  assert.equal(checked.ok, false);
+  assert.equal(checked.code, 'INSUFFICIENT_BALANCE');
 });
 
 test('insufficient balance is rejected', () => {

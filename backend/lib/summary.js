@@ -625,7 +625,7 @@ async function ownerDashboard(db, scope = {}) {
     daily,
     todayTxns: todaySims + todayCbc.n + todayTop.n,
     monthTxns: monthSims + monthCbc.n + monthTop.n,
-    config: require('./commission').publicConfig(),
+    config: await require('./commission').publicConfig(db),
   };
 }
 

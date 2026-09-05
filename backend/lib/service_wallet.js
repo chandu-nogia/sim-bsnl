@@ -47,9 +47,11 @@ function publicWallet(row) {
 
 function ledgerDisplayType(row) {
   const t = String(row.transactionType || '').toUpperCase();
-  if (t === 'USAGE') return 'TRANSACTION';
-  if (t === 'REVERSAL') return 'ADJUSTMENT';
-  return t || 'TRANSACTION';
+  if (t === 'CREDIT') return 'ADD_MONEY';
+  if (t === 'USAGE') return String(row.serviceType || row.source || 'CBP').toUpperCase();
+  if (t === 'REVERSAL') return 'REVERSAL';
+  if (t === 'DEBIT') return 'ADJUSTMENT';
+  return t || 'CBP';
 }
 
 function ledgerSource(row) {
@@ -214,8 +216,9 @@ async function addMoney(db, serviceType, body, meta) {
     newBalancePaise: next,
     commissionPaise: 0,
     description: String(body?.remark || body?.note || 'Add money').trim(),
-    referenceId: String(body?.referenceId || body?.reference || '').trim(),
-    source: 'MANUAL_DEPOSIT',
+    referenceId: String(body?.referenceId || body?.reference || body?.utr || '').trim(),
+    paymentMethod: String(body?.paymentMethod || body?.method || '').trim(),
+    source: 'ADD_MONEY',
     status: 'SUCCESS',
     netImpactPaise: parsed.paise,
     createdBy: meta.email || '',
@@ -285,6 +288,10 @@ function isFailedStatus(status) {
   return String(status || '').toLowerCase() === 'failed';
 }
 
+function isPendingStatus(status) {
+  return String(status || '').toLowerCase() === 'pending';
+}
+
 function usagePayload(calc, { service, referenceId, wallet, ledger, duplicate }) {
   return {
     ok: true,
@@ -303,7 +310,9 @@ async function previewUsage(db, serviceType, body) {
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const resolved = resolveUsageCommission({ amountPaise: amount.paise });
+  const { getRates, rateBpsFor } = require('./commission');
+  const rates = await getRates(db);
+  const resolved = resolveUsageCommission({ amountPaise: amount.paise, rateBps: rateBpsFor(service, rates) });
   if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
   const checked = validateUsage({
     previousPaise: previous,
@@ -330,11 +339,16 @@ async function applyUsage(db, serviceType, body, meta = {}) {
   if (isFailedStatus(body?.status)) {
     return { status: 200, json: { ok: true, skipped: true, success: false, reason: 'Failed transaction wallet nahi badalti' } };
   }
+  if (isPendingStatus(body?.status)) {
+    return { status: 200, json: { ok: true, skipped: true, success: false, reason: 'Pending transaction wallet nahi badalti' } };
+  }
   const amount = requirePositivePaise(body?.amount, 'Transaction amount');
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const resolved = resolveUsageCommission({ amountPaise: amount.paise });
+  const { getRates, rateBpsFor } = require('./commission');
+  const rates = await getRates(db);
+  const resolved = resolveUsageCommission({ amountPaise: amount.paise, rateBps: rateBpsFor(service, rates) });
   if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
   const checked = validateUsage({
     previousPaise: previous,
@@ -790,4 +804,5 @@ module.exports = {
   rebuildCbpFromOpening,
   CBP_OPENING_PAISE,
   isFailedStatus,
+  isPendingStatus,
 };
