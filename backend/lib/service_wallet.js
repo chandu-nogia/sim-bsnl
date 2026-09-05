@@ -538,7 +538,6 @@ async function migrateLegacy(db) {
 
 async function rebuildCbpFromOpening(db) {
   const wallet = await ensureWallet(db, 'CBP');
-  if (wallet.cbpHistoryRebuilt === 'khatu-9') return wallet;
   const meta = { email: 'system', name: 'system', role: 'owner' };
   const credits = Number(wallet.totalCreditsPaise) || 0;
   if (credits < CBP_OPENING_PAISE) {
@@ -547,34 +546,42 @@ async function rebuildCbpFromOpening(db) {
       remark: 'CBP opening balance ₹25100',
       source: 'opening',
     }, meta);
-    if (add.status !== 200) return wallet;
+    if (add.status !== 200) {
+      console.warn('CBP opening add failed:', add.json && add.json.error);
+    }
   }
   const fresh = await ensureWallet(db, 'CBP');
   let remaining = Number(fresh.totalCreditsPaise) || CBP_OPENING_PAISE;
-  const rows = await db.collection('cbc').find(withAlive({
-    transactionStatus: { $nin: ['REVERSED', 'FAILED'] },
-  })).sort({ dateKey: 1, id: 1 }).toArray();
+  const rows = await db.collection('cbc').find(withAlive({})).sort({ dateKey: 1, id: 1 }).toArray();
+  const hasZero = rows.some((row) => {
+    const status = String(row.transactionStatus || '').toUpperCase();
+    if (status === 'REVERSED' || status === 'FAILED' || row.deletedAt) return false;
+    const amount = Number(row.amountPaise) > 0 ? Number(row.amountPaise) : toPaise(row.amount ?? row.amountNum).paise;
+    const comm = Number(row.commissionPaise) > 0 ? Number(row.commissionPaise) : toPaise(row.commission ?? row.commissionNum).paise;
+    return amount > 0 && comm <= 0;
+  });
+  if (fresh.cbpHistoryRebuilt === 'khatu-10' && !hasZero) return fresh;
   let totalAmt = 0;
   let totalComm = 0;
+  let updated = 0;
   for (const row of rows) {
+    const status = String(row.transactionStatus || '').toUpperCase();
+    if (status === 'REVERSED' || status === 'FAILED' || row.deletedAt) continue;
     const amount = Number(row.amountPaise) > 0 ? Number(row.amountPaise) : toPaise(row.amount ?? row.amountNum).paise;
     if (amount <= 0) continue;
     const previous = remaining;
     const expected = previous - amount;
-    let comm = Number(row.commissionPaise) > 0 ? Number(row.commissionPaise) : toPaise(row.commission ?? row.commissionNum).paise;
-    const hasActual = String(row.actualBalance || '').trim() !== '' && toPaise(row.actualBalance).ok;
-    let actual = expected + Math.max(0, comm);
-    if (hasActual && !row.commissionBackfilled && comm === 0) {
-      actual = Number(row.actualBalancePaise) > 0 ? Number(row.actualBalancePaise) : toPaise(row.actualBalance || row.balance).paise;
-      comm = actual - expected;
-      if (comm < 0) comm = 0;
-    } else if (comm <= 0) {
-      comm = legacyAutoCommissionPaise(amount);
-      actual = expected + comm;
+    let comm = Number(row.commissionPaise) > 0
+      ? Number(row.commissionPaise)
+      : toPaise(row.commission ?? row.commissionNum).paise;
+    if (comm <= 0 || row.commissionBackfilled !== 'khatu-10') {
+      if (comm <= 0) comm = legacyAutoCommissionPaise(amount);
     }
+    const actual = expected + comm;
     remaining = actual;
     totalAmt += amount;
     totalComm += comm;
+    updated += 1;
     await db.collection('cbc').updateOne({ _id: row._id }, {
       $set: {
         previousBalance: fromPaise(previous),
@@ -591,7 +598,7 @@ async function rebuildCbpFromOpening(db) {
         amountPaise: amount,
         walletApplied: true,
         transactionStatus: 'SUCCESS',
-        commissionBackfilled: true,
+        commissionBackfilled: 'khatu-10',
         updatedAt: new Date().toISOString(),
       },
     });
@@ -602,10 +609,11 @@ async function rebuildCbpFromOpening(db) {
       totalTransactionAmountPaise: totalAmt,
       totalCommissionPaise: totalComm,
       totalDebitsPaise: totalAmt,
-      cbpHistoryRebuilt: 'khatu-9',
+      cbpHistoryRebuilt: 'khatu-10',
       updatedAt: new Date().toISOString(),
     },
   });
+  console.log(`CBP history rebuild: ${updated} rows, remaining ${fromPaise(remaining)}, commission ${fromPaise(totalComm)}`);
   return ensureWallet(db, 'CBP');
 }
 

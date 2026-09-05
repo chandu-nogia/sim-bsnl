@@ -153,6 +153,28 @@ test('zero commission usage', async () => {
   assert.equal(out.json.wallet.currentBalancePaise, 2467500);
 });
 
+test('CBP rows with leftover actual balance still get 1% if commission is 0', async () => {
+  const db = dbReady();
+  const { rebuildCbpFromOpening } = require('../lib/service_wallet');
+  await db.collection('cbc').insertOne({
+    _id: 20,
+    id: 1,
+    amount: '425.00',
+    amountNum: 425,
+    amountPaise: 42500,
+    commission: '0.00',
+    commissionNum: 0,
+    commissionPaise: 0,
+    actualBalance: '24675.00',
+    actualBalancePaise: 2467500,
+    dateKey: '2026-09-01',
+    transactionStatus: 'SUCCESS',
+  });
+  await rebuildCbpFromOpening(db);
+  assert.equal(db._store.cbc[0].commissionPaise, 425);
+  assert.equal(db._store.cbc[0].commission, '4.25');
+});
+
 test('CBP opening 25100 and old rows get 1% auto commission from remaining', async () => {
   const db = dbReady();
   const { rebuildCbpFromOpening, CBP_OPENING_PAISE } = require('../lib/service_wallet');
@@ -182,6 +204,7 @@ test('CBP opening 25100 and old rows get 1% auto commission from remaining', asy
   assert.equal(rows[0].commissionPaise, 425);
   assert.equal(rows[0].previousBalancePaise, 2510000);
   assert.equal(rows[0].actualBalancePaise, 2510000 - 42500 + 425);
+  assert.equal(rows[0].commission, '4.25');
   assert.equal(rows[1].previousBalancePaise, rows[0].actualBalancePaise);
   assert.equal(rows[1].commissionPaise, 500);
   assert.equal(Number(wallet.currentBalancePaise), rows[1].actualBalancePaise);

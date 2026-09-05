@@ -138,7 +138,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-9' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-10' });
 });
 
 app.get('/api/health', async (_req, res) => {

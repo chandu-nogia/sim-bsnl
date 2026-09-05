@@ -43,8 +43,16 @@ function publicCbc(row) {
     landline: row.landline || '',
     amount: row.amount || moneyText(row.amountNum),
     amountNum: moneyNumber(row.amountNum ?? row.amount),
-    commission: row.commission || moneyText(row.commissionNum),
-    commissionNum: moneyNumber(row.commissionNum ?? row.commission),
+    commission: moneyText(
+      row.commissionPaise != null && row.commissionPaise !== ''
+        ? Number(row.commissionPaise) / 100
+        : (row.commissionNum ?? row.commission),
+    ),
+    commissionNum: moneyNumber(
+      row.commissionPaise != null && row.commissionPaise !== ''
+        ? Number(row.commissionPaise) / 100
+        : (row.commissionNum ?? row.commission),
+    ),
     previousBalance: row.previousBalance || moneyText((row.previousBalancePaise || 0) / 100),
     expectedBalance: row.expectedBalance || moneyText((row.expectedBalancePaise || 0) / 100),
     actualBalance: row.actualBalance || row.balance || moneyText(row.balanceNum),
