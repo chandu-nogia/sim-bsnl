@@ -10,7 +10,7 @@ import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
-enum RecordFieldKind { text, date, choice, computed }
+enum RecordFieldKind { text, date, choice, computed, commission }
 
 class RecordField {
   const RecordField(
@@ -37,6 +37,7 @@ class RecordsPage extends StatefulWidget {
     this.locationId,
     this.locationName,
     this.nested = false,
+    this.commissionModule,
   });
 
   final AuthStore auth;
@@ -46,6 +47,7 @@ class RecordsPage extends StatefulWidget {
   final int? locationId;
   final String? locationName;
   final bool nested;
+  final String? commissionModule;
 
   @override
   State<RecordsPage> createState() => _RecordsPageState();
@@ -61,6 +63,7 @@ class _RecordsPageState extends State<RecordsPage> {
   int _limit = 50;
   int _total = 0;
   String _status = 'All';
+  String _type = 'All';
   String _sort = 'date';
   String _order = 'desc';
   DateTime? _from;
@@ -78,6 +81,20 @@ class _RecordsPageState extends State<RecordsPage> {
   List<String> get _statusOptions {
     for (final f in widget.fields) {
       if (f.key == 'status') return f.options;
+    }
+    return const [];
+  }
+
+  bool get _hasType {
+    for (final f in widget.fields) {
+      if (f.key == 'type' && f.kind == RecordFieldKind.choice) return true;
+    }
+    return false;
+  }
+
+  List<String> get _typeOptions {
+    for (final f in widget.fields) {
+      if (f.key == 'type') return f.options;
     }
     return const [];
   }
@@ -112,6 +129,7 @@ class _RecordsPageState extends State<RecordsPage> {
         from: _from == null ? null : DateFormat('yyyy-MM-dd').format(_from!),
         to: _to == null ? null : DateFormat('yyyy-MM-dd').format(_to!),
         status: _status == 'All' ? null : _status,
+        type: _type == 'All' ? null : _type,
         sort: _sort,
         order: _order,
         page: _page,
@@ -157,6 +175,7 @@ class _RecordsPageState extends State<RecordsPage> {
           initial: existing,
           auth: widget.auth,
           locationId: asInt(existing?['locationId']) ?? _scopeLocationId,
+          commissionModule: widget.commissionModule,
         ),
       ),
     );
@@ -285,7 +304,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     border: Border.all(color: const Color(0xFF6EE7B7)),
                   ),
                   child: Text(
-                    'Remaining ${rupee(_remaining)}   ·   Wallet ${rupee(_wallet)} − amount + commission',
+                    'Current balance ${rupee(_remaining)}   ·   Added ${rupee(_wallet)} − used + commission',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                   ),
                 ),
@@ -314,6 +333,24 @@ class _RecordsPageState extends State<RecordsPage> {
                       ],
                       onChanged: (v) {
                         _status = v ?? 'All';
+                        _page = 1;
+                        _load();
+                      },
+                    ),
+                  ),
+                if (_hasType)
+                  SizedBox(
+                    width: 170,
+                    child: DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _type,
+                      decoration: const InputDecoration(labelText: 'Type', isDense: true),
+                      items: [
+                        const DropdownMenuItem(value: 'All', child: Text('All types')),
+                        for (final o in _typeOptions) DropdownMenuItem(value: o, child: Text(o)),
+                      ],
+                      onChanged: (v) {
+                        _type = v ?? 'All';
                         _page = 1;
                         _load();
                       },
@@ -504,6 +541,9 @@ class _RecordsPageState extends State<RecordsPage> {
         child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
       );
     }
+    if (f.key == 'amount' || f.key == 'commission' || f.key == 'balance') {
+      return Text(rupee(asNum(row[f.key] ?? row['${f.key}Num'])), style: const TextStyle(fontWeight: FontWeight.w700));
+    }
     return Text(text);
   }
 }
@@ -516,12 +556,14 @@ class RecordFormPage extends StatefulWidget {
     this.initial,
     this.auth,
     this.locationId,
+    this.commissionModule,
   });
   final String title;
   final List<RecordField> fields;
   final Map<String, dynamic>? initial;
   final AuthStore? auth;
   final int? locationId;
+  final String? commissionModule;
 
   @override
   State<RecordFormPage> createState() => _RecordFormPageState();
@@ -531,6 +573,8 @@ class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, TextEditingController> _ctrls;
   late final Map<String, DateTime> _dates;
   late final Map<String, String> _choices;
+  num _cbpPct = 1;
+  num _topPct = 2;
 
   @override
   void initState() {
@@ -549,6 +593,29 @@ class _RecordFormPageState extends State<RecordFormPage> {
         if (f.kind == RecordFieldKind.choice)
           f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
     };
+    _ctrls['amount']?.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _loadRates();
+  }
+
+  Future<void> _loadRates() async {
+    final auth = widget.auth;
+    if (auth == null) return;
+    try {
+      final json = await auth.api.appConfig(auth.apiBase);
+      if (!mounted) return;
+      setState(() {
+        _cbpPct = asNum(json['cbpCommissionPercent'] == 0 ? 1 : json['cbpCommissionPercent']);
+        _topPct = asNum(json['ctopupCommissionPercent'] == 0 ? 2 : json['ctopupCommissionPercent']);
+      });
+    } catch (_) {}
+  }
+
+  num _autoCommission() {
+    final amt = asNum(_ctrls['amount']?.text);
+    final pct = widget.commissionModule == 'ctopup' ? _topPct : _cbpPct;
+    return ((amt * pct) / 100 * 100).round() / 100;
   }
 
   String _choiceValue(RecordField f, String raw) {
@@ -567,12 +634,13 @@ class _RecordFormPageState extends State<RecordFormPage> {
   Map<String, String> _body() {
     return {
       for (final f in widget.fields)
-        if (f.kind != RecordFieldKind.computed)
+        if (f.kind != RecordFieldKind.computed && f.kind != RecordFieldKind.commission)
           f.key: switch (f.kind) {
             RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
             RecordFieldKind.choice => _choices[f.key] ?? '',
             RecordFieldKind.text => _ctrls[f.key]!.text.trim(),
             RecordFieldKind.computed => '',
+            RecordFieldKind.commission => '',
           },
     };
   }
@@ -603,10 +671,10 @@ class _RecordFormPageState extends State<RecordFormPage> {
               style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 16),
-            if (widget.fields.any((f) => f.kind == RecordFieldKind.computed)) ...[
-              const Text(
-                'Balance auto nikalta hai: wallet (total amount) − amount + commission.',
-                style: TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
+            if (widget.commissionModule != null) ...[
+              Text(
+                'Commission auto: ${widget.commissionModule == 'ctopup' ? _topPct : _cbpPct}% of amount. Edit nahi hogi.',
+                style: const TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
             ],
@@ -638,6 +706,18 @@ class _RecordFormPageState extends State<RecordFormPage> {
                       controller: _ctrls[f.key],
                       keyboardType: f.keyboard,
                       decoration: InputDecoration(labelText: f.label),
+                    ),
+                  RecordFieldKind.commission => InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: f.label,
+                        suffixText: 'Auto',
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                      ),
+                      child: Text(
+                        rupee(_autoCommission()),
+                        style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
+                      ),
                     ),
                   RecordFieldKind.computed => const SizedBox.shrink(),
                 },

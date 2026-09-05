@@ -29,6 +29,17 @@ function dateKeyOf(raw) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+function applyAmountRange(q, min, max) {
+  const { moneyNumber } = require('./password');
+  const hasMin = String(min ?? '').trim() !== '';
+  const hasMax = String(max ?? '').trim() !== '';
+  if (!hasMin && !hasMax) return q;
+  q.amountNum = {};
+  if (hasMin) q.amountNum.$gte = moneyNumber(min);
+  if (hasMax) q.amountNum.$lte = moneyNumber(max);
+  return q;
+}
+
 function applyDateRange(q, from, to) {
   const f = dateKeyOf(from) || String(from || '').slice(0, 10);
   const t = dateKeyOf(to) || String(to || '').slice(0, 10);
@@ -53,7 +64,7 @@ function sortSpec(scope) {
 }
 
 async function backfillDateKeys(db) {
-  for (const name of ['sims', 'cbc', 'ctopup']) {
+  for (const name of ['sims', 'cbc', 'ctopup', 'wallet_txns']) {
     const col = db.collection(name);
     const rows = await col.find({
       $or: [{ dateKey: { $exists: false } }, { dateKey: null }, { dateKey: '' }],
@@ -65,4 +76,4 @@ async function backfillDateKeys(db) {
   }
 }
 
-module.exports = { dateKeyOf, applyDateRange, sortSpec, backfillDateKeys };
+module.exports = { dateKeyOf, applyDateRange, applyAmountRange, sortSpec, backfillDateKeys };

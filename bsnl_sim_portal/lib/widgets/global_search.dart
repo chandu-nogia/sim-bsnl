@@ -95,7 +95,7 @@ class _PortalSearch extends SearchDelegate<void> {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Text(
-          'Type at least 2 characters. Search Portal, CBP, CTOPUP.',
+          'Type at least 2 characters. Search Portal, CBP, CTOPUP, Wallet.',
           style: TextStyle(color: BsnlColors.muted),
         ),
       );

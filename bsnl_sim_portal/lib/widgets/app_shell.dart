@@ -6,6 +6,7 @@ import '../screens/ctopup_page.dart';
 import '../screens/dashboard_page.dart';
 import '../screens/home_page.dart';
 import '../screens/settings_page.dart';
+import '../screens/wallet_page.dart';
 import '../state/auth_store.dart';
 import '../state/sim_store.dart';
 import '../widgets/global_search.dart';
@@ -33,6 +34,7 @@ class _AppShellState extends State<AppShell> {
 
   static const _items = [
     _NavItem('dashboard', 'Dashboard', Icons.dashboard_outlined),
+    _NavItem('wallet', 'Wallet', Icons.account_balance_wallet_outlined),
     _NavItem('portal', 'BSNL Portal', Icons.sim_card_outlined),
     _NavItem('cbc', 'CBP List', Icons.receipt_long_outlined),
     _NavItem('ctopup', 'CTOPUP', Icons.payments_outlined),
@@ -65,6 +67,8 @@ class _AppShellState extends State<AppShell> {
           locationName: 'Khatushyamji',
           nested: true,
         );
+      case 'wallet':
+        return WalletPage(key: ValueKey('wallet-${auth.locationId}'), auth: auth, nested: true);
       case 'cbc':
         return CbcPage(
           key: ValueKey('cbc-${auth.locationId}'),

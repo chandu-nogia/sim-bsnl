@@ -25,6 +25,13 @@ async function ensureIndexes(db) {
   }
   jobs.push(db.collection('cbc').createIndex({ locationId: 1, transactionId: 1 }));
   jobs.push(db.collection('ctopup').createIndex({ locationId: 1, transactionId: 1 }));
+  jobs.push(db.collection('ctopup').createIndex({ locationId: 1, type: 1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ locationId: 1, id: 1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ txnId: 1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ dateKey: 1, id: -1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ locationId: 1, deletedAt: 1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ transactionType: 1, createdAt: -1 }));
+  jobs.push(db.collection('wallet_txns').createIndex({ amountNum: 1 }));
   jobs.push(db.collection('activity').createIndex({ at: -1 }));
   jobs.push(db.collection('activity').createIndex({ locationId: 1, at: -1 }));
   jobs.push(db.collection('activity').createIndex({ email: 1, at: -1 }));

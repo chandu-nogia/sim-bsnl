@@ -21,7 +21,17 @@ const {
 } = require('./lib/auth');
 const { cbc, ctopup } = require('./lib/records');
 const { ownerDashboard } = require('./lib/summary');
-const { setWallet, getWallet, recomputeBalances } = require('./lib/wallet');
+const {
+  setWallet,
+  getWallet,
+  recomputeBalances,
+  listTransactions,
+  addTransaction,
+  updateTransaction,
+  removeTransaction,
+  ensureOpeningCredit,
+} = require('./lib/wallet');
+const { publicConfig } = require('./lib/commission');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
 const { changePassword, updateMe } = require('./lib/account');
@@ -84,6 +94,10 @@ function scoped(req) {
     sort: req.query?.sort || 'date',
     order: req.query?.order || 'desc',
     status: req.query?.status || '',
+    type: req.query?.type || '',
+    txnType: req.query?.txnType || req.query?.transactionType || '',
+    minAmount: req.query?.minAmount || req.query?.min || '',
+    maxAmount: req.query?.maxAmount || req.query?.max || '',
     page: req.query?.page,
     limit: req.query?.limit,
   };
@@ -111,7 +125,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-5' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-6' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -212,6 +226,58 @@ app.put('/api/wallet', requireUser, async (req, res) => {
     const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await setWallet(await getDb(), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/config', requireUser, async (_req, res) => {
+  res.json({ ok: true, ...publicConfig() });
+});
+
+app.get('/api/wallet/summary', requireUser, async (_req, res) => {
+  try {
+    send(res, await getWallet(await getDb()));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/wallet/transactions', requireUser, async (req, res) => {
+  try {
+    const s = scoped(req);
+    if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+    send(res, await listTransactions(await getDb(), s));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/transactions', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await addTransaction(await getDb(), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.put('/api/wallet/transactions/:id', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await updateTransaction(await getDb(), req.params.id, req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.delete('/api/wallet/transactions/:id', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await removeTransaction(await getDb(), req.params.id, w.meta));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -322,6 +388,7 @@ async function start() {
     await seedUsers(db);
     const { backfillDateKeys } = require('./lib/dates');
     await backfillDateKeys(db);
+    await ensureOpeningCredit(db);
     await recomputeBalances(db);
     await ensureIndexes(db);
     console.log('Owner account and Khatushyamji location ready');

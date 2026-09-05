@@ -5,21 +5,24 @@ const { logActivity } = require('./activity');
 const { mongoListQuery, applyTextSearch } = require('./rbac');
 const { locationMatchQuery } = require('./location_resolve');
 const { withAlive } = require('./alive');
-const { dateKeyOf, applyDateRange, sortSpec } = require('./dates');
-const { moneyNumber } = require('./password');
-const { recomputeBalances, snapshot } = require('./wallet');
+const { dateKeyOf, applyDateRange, applyAmountRange, sortSpec } = require('./dates');
+const { moneyNumber, moneyText, parseAmount } = require('./password');
+const { recomputeBalances, snapshot, assertNotNegative } = require('./wallet');
+const { applyCommission, publicConfig } = require('./commission');
 
 function moneyFields(b) {
-  const amount = String(b.amount ?? '').trim();
-  const commission = String(b.commission ?? b.commition ?? b.commision ?? '').trim();
-  const balance = String(b.balance ?? '').trim();
+  const parsed = parseAmount(b.amount, { required: false, allowZero: true });
+  const amount = parsed.ok ? parsed.text : String(b.amount ?? '').trim();
+  const amountNum = parsed.ok ? parsed.value : moneyNumber(b.amount);
   return {
     amount,
-    amountNum: moneyNumber(amount),
-    commission,
-    commissionNum: moneyNumber(commission),
-    balance,
-    balanceNum: moneyNumber(balance),
+    amountNum,
+    commission: '0.00',
+    commissionNum: 0,
+    commissionRate: 0,
+    balance: '',
+    balanceNum: 0,
+    _amountError: parsed.ok ? null : parsed.error,
   };
 }
 
@@ -35,11 +38,12 @@ function publicCbc(row) {
     name: row.name || '',
     mobile: row.mobile || '',
     landline: row.landline || '',
-    amount: row.amount || '',
+    amount: row.amount || moneyText(row.amountNum),
     amountNum: moneyNumber(row.amountNum ?? row.amount),
-    commission: row.commission || '',
+    commission: row.commission || moneyText(row.commissionNum),
     commissionNum: moneyNumber(row.commissionNum ?? row.commission),
-    balance: row.balance || '',
+    commissionRate: moneyNumber(row.commissionRate),
+    balance: row.balance || moneyText(row.balanceNum),
     balanceNum: moneyNumber(row.balanceNum ?? row.balance),
     transactionId: row.transactionId || '',
     note: row.note || '',
@@ -65,8 +69,8 @@ function pickCbc(body) {
   };
 }
 
-function validateCbc(_row) {
-  return null;
+function validateCbc(row) {
+  return row._amountError || null;
 }
 
 function publicCtopup(row) {
@@ -80,11 +84,13 @@ function publicCtopup(row) {
     dateKey: row.dateKey || dateKeyOf(row.date),
     name: row.name || '',
     number: row.number || '',
-    amount: row.amount || '',
+    amount: row.amount || moneyText(row.amountNum),
     amountNum: moneyNumber(row.amountNum ?? row.amount),
-    commission: row.commission || '',
+    type: row.type || '',
+    commission: row.commission || moneyText(row.commissionNum),
     commissionNum: moneyNumber(row.commissionNum ?? row.commission),
-    balance: row.balance || '',
+    commissionRate: moneyNumber(row.commissionRate),
+    balance: row.balance || moneyText(row.balanceNum),
     balanceNum: moneyNumber(row.balanceNum ?? row.balance),
     status: row.status || 'Pending',
     transactionId: row.transactionId || '',
@@ -104,6 +110,7 @@ function pickCtopup(body) {
     dateKey: dateKeyOf(date),
     name: String(b.name ?? '').trim(),
     number: String(b.number ?? b.mobile ?? '').trim(),
+    type: String(b.type ?? b.topupType ?? '').trim(),
     ...moneyFields(b),
     status: String(b.status ?? b.paymentStatus ?? 'Pending').trim() || 'Pending',
     transactionId: String(b.transactionId ?? b.txnId ?? b.reference ?? '').trim(),
@@ -111,8 +118,8 @@ function pickCtopup(body) {
   };
 }
 
-function validateCtopup(_row) {
-  return null;
+function validateCtopup(row) {
+  return row._amountError || null;
 }
 
 function actorLabel(meta) {
@@ -123,10 +130,13 @@ function makeCrud(collection, pick, validate, toPublic, section) {
   return {
     async list(db, scope = {}) {
       let q = withAlive(mongoListQuery(scope));
-      q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId', 'note'], scope.q);
+      q = applyTextSearch(q, ['name', 'mobile', 'number', 'transactionId', 'note', 'type'], scope.q);
       q = applyDateRange(q, scope.from, scope.to);
+      q = applyAmountRange(q, scope.minAmount, scope.maxAmount);
       const status = String(scope.status || '').trim();
       if (status) q.status = status;
+      const typ = String(scope.type || '').trim();
+      if (typ && typ !== 'All') q.type = typ;
       const page = Math.max(1, Number(scope.page) || 1);
       const limit = Math.min(500, Math.max(20, Number(scope.limit) || 200));
       const skip = (page - 1) * limit;
@@ -141,12 +151,20 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         limit,
         walletAmount: snap.walletAmount,
         remainingBalance: snap.remainingBalance,
+        ...publicConfig(),
       };
     },
     async add(db, body, meta) {
-      const row = pick(body);
-      const err = validate(row);
+      const picked = pick(body);
+      const err = validate(picked);
       if (err) return { status: 400, json: { ok: false, error: err } };
+      const row = applyCommission(section, picked);
+      delete row._amountError;
+      const blocked = await assertNotNegative(db, {
+        extraUsed: moneyNumber(row.amountNum),
+        extraCommission: moneyNumber(row.commissionNum),
+      }, 'Wallet mein itna balance nahi hai. Pehle Wallet se amount add karo.');
+      if (blocked) return blocked;
       if (row.transactionId && body?.force !== true) {
         const dup = await db.collection(collection).findOne(withAlive({
           locationId: Number(meta.locationId),
@@ -196,9 +214,16 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
-      const row = pick({ ...toPublic(existing), ...body });
-      const err = validate(row);
+      const picked = pick({ ...toPublic(existing), ...body });
+      const err = validate(picked);
       if (err) return { status: 400, json: { ok: false, error: err } };
+      const row = applyCommission(section, picked);
+      delete row._amountError;
+      const moneyBlock = await assertNotNegative(db, {
+        extraUsed: moneyNumber(row.amountNum) - moneyNumber(existing.amountNum ?? existing.amount),
+        extraCommission: moneyNumber(row.commissionNum) - moneyNumber(existing.commissionNum ?? existing.commission),
+      }, 'Is update se wallet balance negative ho jayega.');
+      if (moneyBlock) return moneyBlock;
       const saved = {
         ...row,
         id,
@@ -218,7 +243,7 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         section,
         locationId: saved.locationId,
         locationName: saved.locationName,
-        detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} record in ${saved.locationName}`,
+        detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} ₹${moneyText(existing.amountNum)} → ₹${row.amount} in ${saved.locationName}`,
       });
       await recomputeBalances(db);
       const fresh = await db.collection(collection).findOne({ id });

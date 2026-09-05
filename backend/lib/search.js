@@ -23,7 +23,7 @@ async function globalSearch(db, _user, raw) {
   const [sims, cbc, ctopup] = await Promise.all([
     db.collection('sims').find({ ...alive, $or: [{ name: text }, { mobile: text }, { sim: text }, { last6: text }, ...(asId ? [{ id: asId }] : [])] }).limit(8).toArray(),
     db.collection('cbc').find({ ...alive, $or: [{ name: text }, { mobile: text }, { transactionId: text }, ...(asId ? [{ id: asId }] : [])] }).limit(8).toArray(),
-    db.collection('ctopup').find({ ...alive, $or: [{ name: text }, { number: text }, { transactionId: text }, ...(asId ? [{ id: asId }] : [])] }).limit(8).toArray(),
+    db.collection('ctopup').find({ ...alive, $or: [{ name: text }, { number: text }, { transactionId: text }, { type: text }, ...(asId ? [{ id: asId }] : [])] }).limit(8).toArray(),
   ]);
   return {
     status: 200,

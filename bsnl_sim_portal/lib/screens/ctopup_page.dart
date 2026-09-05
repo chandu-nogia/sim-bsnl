@@ -19,12 +19,20 @@ class CtopupPage extends StatelessWidget {
       locationId: locationId,
       locationName: locationName,
       nested: nested,
+      commissionModule: 'ctopup',
       fields: const [
         RecordField('date', 'Date', kind: RecordFieldKind.date),
         RecordField('name', 'Name'),
-        RecordField('number', 'Number'),
+        RecordField('number', 'Mobile Number'),
+        RecordField('type', 'Type', kind: RecordFieldKind.choice, options: [
+          'Recharge',
+          'Activation',
+          'Replacement',
+          'Port',
+          'Other',
+        ]),
         RecordField('amount', 'Amount', keyboard: TextInputType.numberWithOptions(decimal: true)),
-        RecordField('commission', 'Commission', keyboard: TextInputType.numberWithOptions(decimal: true)),
+        RecordField('commission', 'Commission', kind: RecordFieldKind.commission),
         RecordField('balance', 'Balance', kind: RecordFieldKind.computed),
         RecordField('transactionId', 'Txn / Reference'),
         RecordField('status', 'Status of payment', kind: RecordFieldKind.choice, options: [
@@ -32,7 +40,7 @@ class CtopupPage extends StatelessWidget {
           'Paid',
           'Failed',
         ]),
-        RecordField('note', 'Note'),
+        RecordField('note', 'Remark / Notes'),
       ],
     );
   }

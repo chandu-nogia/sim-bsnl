@@ -1,9 +1,8 @@
 import 'package:intl/intl.dart';
 
-String rupee(num n) {
-  final f = NumberFormat.decimalPattern('en_IN');
-  return '₹${f.format(n.round())}';
-}
+final _inr = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 2);
+
+String rupee(num n) => _inr.format(n);
 
 int? asInt(dynamic v) {
   if (v is int) return v;
@@ -13,7 +12,8 @@ int? asInt(dynamic v) {
 
 num asNum(dynamic v) {
   if (v is num) return v;
-  return num.tryParse('$v') ?? 0;
+  final s = '$v'.replaceAll(',', '').replaceAll('₹', '').trim();
+  return num.tryParse(s) ?? 0;
 }
 
 List<Map<String, dynamic>> asMaps(dynamic v) {

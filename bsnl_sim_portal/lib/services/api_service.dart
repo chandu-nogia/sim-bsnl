@@ -22,6 +22,11 @@ class PagedRows {
     this.limit = 50,
     this.walletAmount = 0,
     this.remainingBalance = 0,
+    this.totalAdded = 0,
+    this.totalUsed = 0,
+    this.combinedCommission = 0,
+    this.cbpCommissionPercent = 1,
+    this.ctopupCommissionPercent = 2,
   });
   final List<Map<String, dynamic>> rows;
   final int total;
@@ -29,6 +34,11 @@ class PagedRows {
   final int limit;
   final num walletAmount;
   final num remainingBalance;
+  final num totalAdded;
+  final num totalUsed;
+  final num combinedCommission;
+  final num cbpCommissionPercent;
+  final num ctopupCommissionPercent;
 }
 
 class LoginResult {
@@ -184,6 +194,10 @@ class ApiService {
     String? from,
     String? to,
     String? status,
+    String? type,
+    String? txnType,
+    String? minAmount,
+    String? maxAmount,
     String? sort,
     String? order,
     int? page,
@@ -199,6 +213,10 @@ class ApiService {
             'from': from,
             'to': to,
             'status': status,
+            'type': type,
+            'txnType': txnType,
+            'minAmount': minAmount,
+            'maxAmount': maxAmount,
             'sort': sort,
             'order': order,
             'page': page?.toString(),
@@ -217,8 +235,13 @@ class ApiService {
       total: _int(json['total']) ?? rows.length,
       page: _int(json['page']) ?? (page ?? 1),
       limit: _int(json['limit']) ?? (limit ?? rows.length),
-      walletAmount: _num(json['walletAmount']),
+      walletAmount: _num(json['walletAmount'] ?? json['totalAdded']),
       remainingBalance: _num(json['remainingBalance']),
+      totalAdded: _num(json['totalAdded'] ?? json['walletAmount']),
+      totalUsed: _num(json['totalUsed'] ?? json['combinedAmount']),
+      combinedCommission: _num(json['combinedCommission']),
+      cbpCommissionPercent: _num(json['cbpCommissionPercent'] == 0 ? 1 : json['cbpCommissionPercent']),
+      ctopupCommissionPercent: _num(json['ctopupCommissionPercent'] == 0 ? 2 : json['ctopupCommissionPercent']),
     );
   }
 
@@ -230,6 +253,10 @@ class ApiService {
     String? from,
     String? to,
     String? status,
+    String? type,
+    String? txnType,
+    String? minAmount,
+    String? maxAmount,
     String? sort,
     String? order,
     int? page,
@@ -243,6 +270,10 @@ class ApiService {
       from: from,
       to: to,
       status: status,
+      type: type,
+      txnType: txnType,
+      minAmount: minAmount,
+      maxAmount: maxAmount,
       sort: sort,
       order: order,
       page: page,
@@ -349,15 +380,27 @@ class ApiService {
     return json;
   }
 
-  Future<Map<String, dynamic>> saveWallet(String base, String amount) async {
+  Future<Map<String, dynamic>> appConfig(String base) async {
+    final json = await _send(http.get(_uri(base, '/api/config'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Config fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> walletSummary(String base) async {
+    final json = await _send(http.get(_uri(base, '/api/wallet/summary'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Wallet fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> saveWallet(String base, String amount, {String remark = ''}) async {
     final json = await _send(
-      http.put(
-        _uri(base, '/api/wallet'),
+      http.post(
+        _uri(base, '/api/wallet/transactions'),
         headers: _headers(),
-        body: jsonEncode({'amount': amount}),
+        body: jsonEncode({'amount': amount, 'remark': remark}),
       ),
     );
-    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Wallet save fail'}');
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Wallet add fail'}');
     return json;
   }
 

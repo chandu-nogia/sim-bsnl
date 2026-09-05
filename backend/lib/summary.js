@@ -429,7 +429,7 @@ async function ownerDashboard(db) {
       { $match: alive },
       { $group: { _id: { $ifNull: ['$status', 'Pending'] }, n: { $sum: 1 }, amount: { $sum: amountExpr() } } },
     ]).toArray(),
-    db.collection('activity').find({ locationId: Number(loc?.id) || 1 }).sort({ id: -1 }).limit(12).toArray(),
+    Promise.resolve([]),
   ]);
 
   const daily = [];
@@ -493,6 +493,8 @@ async function ownerDashboard(db) {
     totals: {
       records: sims + cbcAll.n + topAll.n,
       walletAmount: snap.walletAmount,
+      totalAdded: snap.totalAdded,
+      totalUsed: snap.totalUsed,
       cbcAmount: cbcAll.amount,
       ctopupAmount: topAll.amount,
       combinedAmount: Math.round((cbcAll.amount + topAll.amount) * 100) / 100,
@@ -547,13 +549,9 @@ async function ownerDashboard(db) {
       Failed: failed,
     },
     daily,
-    activity: activity.map((a) => ({
-      at: a.at || '',
-      name: a.name || a.email || '',
-      action: a.action || '',
-      section: a.section || '',
-      detail: a.detail || '',
-    })),
+    todayTxns: todaySims + todayCbc.n + todayTop.n,
+    monthTxns: monthSims + monthCbc.n + monthTop.n,
+    config: require('./commission').publicConfig(),
   };
 }
 
