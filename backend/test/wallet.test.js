@@ -133,6 +133,16 @@ test('Test 10: concurrent transactions do not corrupt wallet', async () => {
   assert.ok(wallet.currentBalancePaise >= 0);
 });
 
+test('empty remaining balance means no extra commission', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '25100' }, m);
+  const out = await applyUsage(db, 'CBP', { amount: '425', transactionId: 'NO-BAL' }, m);
+  assert.equal(out.status, 200);
+  assert.equal(out.json.calc.commissionPaise, 0);
+  assert.equal(out.json.wallet.currentBalancePaise, 2467500);
+});
+
 test('zero commission usage', async () => {
   const db = dbReady();
   const m = meta();

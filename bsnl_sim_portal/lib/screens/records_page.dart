@@ -306,7 +306,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     border: Border.all(color: const Color(0xFF6EE7B7)),
                   ),
                   child: Text(
-                    'Wallet ${rupee(_remaining)}   ·   Commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}',
+                    'Balance ${rupee(_remaining)}   ·   Extra commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                   ),
                 ),
@@ -623,9 +623,16 @@ class _RecordFormPageState extends State<RecordFormPage> {
   }
 
   num get _amount => asNum(_ctrls['amount']?.text);
-  num get _actual => asNum(_ctrls['balance']?.text);
   num get _expected => _previous - _amount;
-  num get _previewCommission => _actual - _expected;
+  num get _actual {
+    final raw = _ctrls['balance']?.text.trim() ?? '';
+    if (raw.isEmpty) return _expected;
+    return asNum(raw);
+  }
+  num get _previewCommission {
+    final extra = _actual - _expected;
+    return extra < 0 ? 0 : extra;
+  }
 
   String _choiceValue(RecordField f, String raw) {
     if (f.options.contains(raw)) return raw;
@@ -689,12 +696,12 @@ class _RecordFormPageState extends State<RecordFormPage> {
             const SizedBox(height: 16),
             if (widget.commissionModule != null) ...[
               Text(
-                'Commission = Actual Balance − (Previous − Amount). Backend confirm karega. Amount commission nahi hai.',
+                'Amount = khate se jo kata. Balance = jo bacha. Extra bacha to commission automatic add hogi. Commission type nahi karni.',
                 style: const TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
-                'Previous ${rupee(_previous)}   ·   Expected ${rupee(_expected)}   ·   Commission ${rupee(_previewCommission)}',
+                'Pehle ${rupee(_previous)}  −  Amount ${rupee(_amount)}  =  ${rupee(_expected)}   ·   Extra commission ${rupee(_previewCommission)}',
                 style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
@@ -726,22 +733,26 @@ class _RecordFormPageState extends State<RecordFormPage> {
                   RecordFieldKind.text => TextField(
                       controller: _ctrls[f.key],
                       keyboardType: f.keyboard,
-                      decoration: InputDecoration(labelText: f.label),
+                      decoration: InputDecoration(
+                        labelText: f.label,
+                        helperText: f.key == 'amount' && widget.commissionModule != null ? 'Khate se jo amount kata' : null,
+                      ),
                     ),
                   RecordFieldKind.actualBalance => TextField(
                       controller: _ctrls[f.key],
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         labelText: f.label,
-                        helperText: 'Transaction ke baad wallet mein jo balance bacha',
+                        helperText: 'Khate mein jo amount bacha. Extra bacha to commission auto.',
                         prefixText: '₹ ',
+                        hintText: _amount > 0 ? rupee(_expected) : null,
                       ),
                     ),
                   RecordFieldKind.commission => InputDecorator(
                       decoration: InputDecoration(
-                        labelText: f.label,
+                        labelText: '${f.label} (automatic)',
                         suffixText: 'Auto',
-                        helperText: 'Recharge amount nahi. Expected se extra balance.',
+                        helperText: 'Jo extra add hua. Amount nahi. Type mat karo.',
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                       ),

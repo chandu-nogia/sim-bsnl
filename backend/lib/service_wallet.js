@@ -249,12 +249,17 @@ async function applyUsage(db, serviceType, body, meta) {
   }
   const amount = requirePositivePaise(body?.amount, 'Transaction amount');
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
-  const actualRaw = body?.actualBalance ?? body?.balance ?? body?.actual;
-  const actual = toPaise(actualRaw);
-  if (!actual.ok) return { status: 400, json: { ok: false, error: 'Actual balance (transaction ke baad) likho' } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const checked = validateUsage({ previousPaise: previous, amountPaise: amount.paise, actualPaise: actual.paise });
+  const actualRaw = body?.actualBalance ?? body?.balance ?? body?.actual;
+  const actualEmpty = String(actualRaw ?? '').trim() === '';
+  let actualPaise = previous - amount.paise;
+  if (!actualEmpty) {
+    const actual = toPaise(actualRaw);
+    if (!actual.ok) return { status: 400, json: { ok: false, error: 'Balance (jo khate mein bacha) number mein likho' } };
+    actualPaise = actual.paise;
+  }
+  const checked = validateUsage({ previousPaise: previous, amountPaise: amount.paise, actualPaise });
   if (!checked.ok) return { status: 400, json: { ok: false, error: checked.error, calc: checked.calc } };
   const calc = checked.calc;
   const ref = String(body?.transactionId || body?.referenceNumber || body?.referenceId || '').trim();
