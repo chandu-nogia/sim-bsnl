@@ -512,6 +512,12 @@ async function snapshotBoth(db) {
   };
 }
 
+const CBP_OPENING_PAISE = 2510000;
+
+function legacyAutoCommissionPaise(amountPaise) {
+  return Math.round((Number(amountPaise) || 0) / 100);
+}
+
 async function migrateLegacy(db) {
   await ensureWallet(db, 'CBP');
   await ensureWallet(db, 'CTOPUP');
@@ -528,6 +534,79 @@ async function migrateLegacy(db) {
     await addMoney(db, 'CBP', { amount: fromPaise(amount), remark: row.remark || 'Migrated opening credit', date: row.date }, meta);
     await db.collection('wallet_txns').updateOne({ _id: row._id }, { $set: { migratedToService: 'CBP' } });
   }
+}
+
+async function rebuildCbpFromOpening(db) {
+  const wallet = await ensureWallet(db, 'CBP');
+  if (wallet.cbpHistoryRebuilt === 'khatu-9') return wallet;
+  const meta = { email: 'system', name: 'system', role: 'owner' };
+  const credits = Number(wallet.totalCreditsPaise) || 0;
+  if (credits < CBP_OPENING_PAISE) {
+    const add = await addMoney(db, 'CBP', {
+      amount: fromPaise(CBP_OPENING_PAISE - credits),
+      remark: 'CBP opening balance ₹25100',
+      source: 'opening',
+    }, meta);
+    if (add.status !== 200) return wallet;
+  }
+  const fresh = await ensureWallet(db, 'CBP');
+  let remaining = Number(fresh.totalCreditsPaise) || CBP_OPENING_PAISE;
+  const rows = await db.collection('cbc').find(withAlive({
+    transactionStatus: { $nin: ['REVERSED', 'FAILED'] },
+  })).sort({ dateKey: 1, id: 1 }).toArray();
+  let totalAmt = 0;
+  let totalComm = 0;
+  for (const row of rows) {
+    const amount = Number(row.amountPaise) > 0 ? Number(row.amountPaise) : toPaise(row.amount ?? row.amountNum).paise;
+    if (amount <= 0) continue;
+    const previous = remaining;
+    const expected = previous - amount;
+    let comm = Number(row.commissionPaise) > 0 ? Number(row.commissionPaise) : toPaise(row.commission ?? row.commissionNum).paise;
+    const hasActual = String(row.actualBalance || '').trim() !== '' && toPaise(row.actualBalance).ok;
+    let actual = expected + Math.max(0, comm);
+    if (hasActual && !row.commissionBackfilled && comm === 0) {
+      actual = Number(row.actualBalancePaise) > 0 ? Number(row.actualBalancePaise) : toPaise(row.actualBalance || row.balance).paise;
+      comm = actual - expected;
+      if (comm < 0) comm = 0;
+    } else if (comm <= 0) {
+      comm = legacyAutoCommissionPaise(amount);
+      actual = expected + comm;
+    }
+    remaining = actual;
+    totalAmt += amount;
+    totalComm += comm;
+    await db.collection('cbc').updateOne({ _id: row._id }, {
+      $set: {
+        previousBalance: fromPaise(previous),
+        previousBalancePaise: previous,
+        expectedBalance: fromPaise(expected),
+        expectedBalancePaise: expected,
+        actualBalance: fromPaise(actual),
+        actualBalancePaise: actual,
+        balance: fromPaise(actual),
+        balanceNum: rupeeNum(actual),
+        commission: fromPaise(comm),
+        commissionNum: rupeeNum(comm),
+        commissionPaise: comm,
+        amountPaise: amount,
+        walletApplied: true,
+        transactionStatus: 'SUCCESS',
+        commissionBackfilled: true,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+  await db.collection('wallets').updateOne({ _id: fresh._id }, {
+    $set: {
+      currentBalancePaise: remaining,
+      totalTransactionAmountPaise: totalAmt,
+      totalCommissionPaise: totalComm,
+      totalDebitsPaise: totalAmt,
+      cbpHistoryRebuilt: 'khatu-9',
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  return ensureWallet(db, 'CBP');
 }
 
 module.exports = {
@@ -547,5 +626,7 @@ module.exports = {
   periodCommission,
   snapshotBoth,
   migrateLegacy,
+  rebuildCbpFromOpening,
+  CBP_OPENING_PAISE,
   isFailedStatus,
 };

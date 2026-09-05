@@ -41,6 +41,7 @@ const {
   reverseByRef,
   snapshotBoth,
   migrateLegacy,
+  rebuildCbpFromOpening,
   ensureWallet,
 } = require('./lib/service_wallet');
 const { publicConfig } = require('./lib/commission');
@@ -137,7 +138,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-8' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-9' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -502,6 +503,7 @@ async function start() {
     await ensureWallet(db, 'CBP');
     await ensureWallet(db, 'CTOPUP');
     await migrateLegacy(db);
+    await rebuildCbpFromOpening(db);
     await snapshotBoth(db);
     await ensureIndexes(db);
     console.log('Owner account and Khatushyamji location ready');

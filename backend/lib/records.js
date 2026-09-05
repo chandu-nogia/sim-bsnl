@@ -20,8 +20,8 @@ function moneyFields(b) {
     amount,
     amountNum,
     actualBalance: actual.ok ? actual.text : String(actualRaw ?? ''),
-    commission: '0.00',
-    commissionNum: 0,
+    commission: b.commission === undefined || b.commission === '' ? undefined : String(b.commission),
+    commissionNum: b.commissionNum,
     balance: actual.ok ? actual.text : '',
     balanceNum: actual.ok ? actual.value : 0,
     _amountError: parsed.ok ? null : parsed.error,
@@ -310,6 +310,21 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       } else if (!shouldApply) {
         row.walletApplied = false;
         row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : existing.transactionStatus || 'SUCCESS';
+      }
+      if (!moneyChanged) {
+        row.commission = existing.commission;
+        row.commissionNum = existing.commissionNum;
+        row.commissionPaise = existing.commissionPaise;
+        row.previousBalance = existing.previousBalance;
+        row.previousBalancePaise = existing.previousBalancePaise;
+        row.expectedBalance = existing.expectedBalance;
+        row.expectedBalancePaise = existing.expectedBalancePaise;
+        row.actualBalance = existing.actualBalance;
+        row.actualBalancePaise = existing.actualBalancePaise;
+        row.balance = existing.balance;
+        row.balanceNum = existing.balanceNum;
+        row.walletApplied = existing.walletApplied;
+        row.transactionStatus = existing.transactionStatus;
       }
       const saved = {
         ...row,

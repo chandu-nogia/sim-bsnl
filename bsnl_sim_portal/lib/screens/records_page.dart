@@ -306,7 +306,9 @@ class _RecordsPageState extends State<RecordsPage> {
                     border: Border.all(color: const Color(0xFF6EE7B7)),
                   ),
                   child: Text(
-                    'Balance ${rupee(_remaining)}   ·   Extra commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}',
+                    widget.commissionModule == null
+                        ? 'Balance ${rupee(_remaining)}   ·   Extra commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}'
+                        : 'Opening ${rupee(_wallet)}   ·   Bacha ${rupee(_remaining)}   ·   Commission ${rupee(_commission)}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                   ),
                 ),
