@@ -25,8 +25,10 @@ class PagedRows {
     this.totalAdded = 0,
     this.totalUsed = 0,
     this.combinedCommission = 0,
-    this.cbpCommissionPercent = 1,
-    this.ctopupCommissionPercent = 2,
+    this.totalCommission = 0,
+    this.previousBalance = 0,
+    this.cbpCommissionPercent = 0,
+    this.ctopupCommissionPercent = 0,
   });
   final List<Map<String, dynamic>> rows;
   final int total;
@@ -37,6 +39,8 @@ class PagedRows {
   final num totalAdded;
   final num totalUsed;
   final num combinedCommission;
+  final num totalCommission;
+  final num previousBalance;
   final num cbpCommissionPercent;
   final num ctopupCommissionPercent;
 }
@@ -235,13 +239,15 @@ class ApiService {
       total: _int(json['total']) ?? rows.length,
       page: _int(json['page']) ?? (page ?? 1),
       limit: _int(json['limit']) ?? (limit ?? rows.length),
-      walletAmount: _num(json['walletAmount'] ?? json['totalAdded']),
-      remainingBalance: _num(json['remainingBalance']),
-      totalAdded: _num(json['totalAdded'] ?? json['walletAmount']),
-      totalUsed: _num(json['totalUsed'] ?? json['combinedAmount']),
-      combinedCommission: _num(json['combinedCommission']),
-      cbpCommissionPercent: _num(json['cbpCommissionPercent'] == 0 ? 1 : json['cbpCommissionPercent']),
-      ctopupCommissionPercent: _num(json['ctopupCommissionPercent'] == 0 ? 2 : json['ctopupCommissionPercent']),
+      walletAmount: _num(json['walletAmount'] ?? json['totalCreditsNum'] ?? json['totalAdded'] ?? json['currentBalanceNum']),
+      remainingBalance: _num(json['remainingBalance'] ?? json['currentBalanceNum'] ?? json['currentBalance']),
+      totalAdded: _num(json['totalAdded'] ?? json['totalCreditsNum'] ?? json['totalCredits'] ?? json['walletAmount']),
+      totalUsed: _num(json['totalUsed'] ?? json['totalTransactionAmountNum'] ?? json['totalTransactionAmount'] ?? json['combinedAmount']),
+      combinedCommission: _num(json['combinedCommission'] ?? json['totalCommissionNum'] ?? json['totalCommission']),
+      totalCommission: _num(json['totalCommissionNum'] ?? json['totalCommission'] ?? json['combinedCommission']),
+      previousBalance: _num(json['previousBalance'] ?? json['currentBalanceNum'] ?? json['currentBalance'] ?? json['remainingBalance']),
+      cbpCommissionPercent: _num(json['cbpCommissionPercent']),
+      ctopupCommissionPercent: _num(json['ctopupCommissionPercent']),
     );
   }
 
@@ -374,9 +380,103 @@ class ApiService {
     } catch (_) {}
   }
 
-  Future<Map<String, dynamic>> dashboard(String base) async {
-    final json = await _send(http.get(_uri(base, '/api/dashboard'), headers: _headers()));
+  Future<Map<String, dynamic>> dashboard(String base, {String? from, String? to, String? period}) async {
+    final json = await _send(
+      http.get(
+        _uri(base, _withQuery('/api/dashboard', {'from': from, 'to': to, 'period': period})),
+        headers: _headers(),
+      ),
+    );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Dashboard fail'}');
+    return json;
+  }
+
+  String _servicePath(String service) {
+    final s = service.trim().toLowerCase();
+    if (s == 'ctopup' || s == 'c-topup' || s == 'topup') return 'ctopup';
+    return 'cbp';
+  }
+
+  Future<Map<String, dynamic>> serviceWallet(String base, String service) async {
+    final json = await _send(http.get(_uri(base, '/api/wallet/${_servicePath(service)}'), headers: _headers()));
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Wallet fail'}');
+    return json;
+  }
+
+  Future<PagedRows> serviceLedger(String base, String service, {
+    String? q,
+    String? from,
+    String? to,
+    String? txnType,
+    int? page,
+    int? limit,
+  }) {
+    return listPage(
+      base,
+      '/api/wallet/${_servicePath(service)}/ledger',
+      q: q,
+      from: from,
+      to: to,
+      txnType: txnType,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<PagedRows> serviceCommission(String base, String service, {
+    String? q,
+    String? from,
+    String? to,
+    int? page,
+    int? limit,
+  }) {
+    return listPage(
+      base,
+      '/api/wallet/${_servicePath(service)}/commission',
+      q: q,
+      from: from,
+      to: to,
+      page: page,
+      limit: limit,
+    );
+  }
+
+  Future<Map<String, dynamic>> addServiceMoney(String base, String service, String amount, {String remark = '', String source = 'manual'}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/wallet/${_servicePath(service)}/add-money'),
+        headers: _headers(),
+        body: jsonEncode({'amount': amount, 'remark': remark, 'source': source}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Add money fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> withdrawServiceMoney(String base, String service, String amount, {String reason = ''}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/wallet/${_servicePath(service)}/withdraw'),
+        headers: _headers(),
+        body: jsonEncode({'amount': amount, 'reason': reason}),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Withdraw fail'}');
+    return json;
+  }
+
+  Future<Map<String, dynamic>> reverseServiceTxn(String base, String service, {int? id, String? transactionId}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/wallet/${_servicePath(service)}/reversal'),
+        headers: _headers(),
+        body: jsonEncode({
+          'id': ?id,
+          'transactionId': ?transactionId,
+        }),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Reversal fail'}');
     return json;
   }
 

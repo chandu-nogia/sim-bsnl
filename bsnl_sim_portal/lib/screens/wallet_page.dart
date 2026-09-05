@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../app_theme.dart';
-import '../services/api_service.dart';
 import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
@@ -23,15 +22,13 @@ class _WalletPageState extends State<WalletPage> {
   String? _error;
   List<Map<String, dynamic>> _rows = [];
   final _search = TextEditingController();
-  final _min = TextEditingController();
-  final _max = TextEditingController();
   Timer? _debounce;
   int _page = 1;
   int _limit = 50;
   int _total = 0;
-  String _type = 'CREDIT';
-  final String _sort = 'date';
-  final String _order = 'desc';
+  String _service = 'cbp';
+  String _tab = 'ledger';
+  String _type = 'All';
   DateTime? _from;
   DateTime? _to;
   num _added = 0;
@@ -49,8 +46,6 @@ class _WalletPageState extends State<WalletPage> {
   void dispose() {
     _debounce?.cancel();
     _search.dispose();
-    _min.dispose();
-    _max.dispose();
     super.dispose();
   }
 
@@ -60,20 +55,28 @@ class _WalletPageState extends State<WalletPage> {
       _error = null;
     });
     try {
-      final out = await widget.auth.api.listPage(
-        widget.auth.apiBase,
-        '/api/wallet/transactions',
-        q: _search.text.trim(),
-        from: _from == null ? null : DateFormat('yyyy-MM-dd').format(_from!),
-        to: _to == null ? null : DateFormat('yyyy-MM-dd').format(_to!),
-        txnType: _type == 'All' ? null : _type,
-        minAmount: _min.text.trim().isEmpty ? null : _min.text.trim(),
-        maxAmount: _max.text.trim().isEmpty ? null : _max.text.trim(),
-        sort: _sort,
-        order: _order,
-        page: _page,
-        limit: _limit,
-      );
+      final from = _from == null ? null : DateFormat('yyyy-MM-dd').format(_from!);
+      final to = _to == null ? null : DateFormat('yyyy-MM-dd').format(_to!);
+      final out = _tab == 'commission'
+          ? await widget.auth.api.serviceCommission(
+              widget.auth.apiBase,
+              _service,
+              q: _search.text.trim(),
+              from: from,
+              to: to,
+              page: _page,
+              limit: _limit,
+            )
+          : await widget.auth.api.serviceLedger(
+              widget.auth.apiBase,
+              _service,
+              q: _search.text.trim(),
+              from: from,
+              to: to,
+              txnType: _type == 'All' ? null : _type,
+              page: _page,
+              limit: _limit,
+            );
       setState(() {
         _rows = out.rows;
         _total = out.total;
@@ -81,7 +84,7 @@ class _WalletPageState extends State<WalletPage> {
         _limit = out.limit == 0 ? _limit : out.limit;
         _added = out.totalAdded;
         _used = out.totalUsed;
-        _commission = out.combinedCommission;
+        _commission = out.totalCommission;
         _remaining = out.remainingBalance;
       });
     } catch (e) {
@@ -99,52 +102,21 @@ class _WalletPageState extends State<WalletPage> {
     });
   }
 
-  int? _idOf(Map<String, dynamic> row) => asInt(row['id'] ?? row['rowIndex']);
-
-  Future<void> _save(Map<String, dynamic>? existing) async {
+  Future<void> _money({required bool withdraw}) async {
     final body = await showDialog<Map<String, String>>(
       context: context,
-      builder: (ctx) => _WalletForm(initial: existing),
+      builder: (ctx) => _WalletForm(withdraw: withdraw, service: _service),
     );
     if (body == null || !mounted) return;
     try {
-      if (existing == null) {
-        await widget.auth.api.saveWallet(widget.auth.apiBase, body['amount'] ?? '', remark: body['remark'] ?? '');
+      if (withdraw) {
+        await widget.auth.api.withdrawServiceMoney(widget.auth.apiBase, _service, body['amount'] ?? '', reason: body['remark'] ?? '');
       } else {
-        final id = _idOf(existing);
-        if (id == null) throw ApiException('Transaction id nahi mili');
-        await widget.auth.api.updateRow(widget.auth.apiBase, '/api/wallet/transactions', id, body);
+        await widget.auth.api.addServiceMoney(widget.auth.apiBase, _service, body['amount'] ?? '', remark: body['remark'] ?? '');
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(existing == null ? 'Amount add ho gaya' : 'Transaction update ho gayi')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(withdraw ? 'Amount withdraw ho gaya' : 'Amount add ho gaya')));
       }
-      await _load();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-    }
-  }
-
-  Future<void> _delete(Map<String, dynamic> row) async {
-    final id = _idOf(row);
-    if (id == null) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete wallet transaction?'),
-        content: Text('Delete ${row['txnId'] ?? id} of ${rupee(asNum(row['amount']))}? Balance auto recalculate hoga. Agar CBP/CTOPUP is amount ko use kar chuke hain to delete nahi hoga.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      await widget.auth.api.deleteRow(widget.auth.apiBase, '/api/wallet/transactions', id);
       await _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -155,19 +127,21 @@ class _WalletPageState extends State<WalletPage> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('${row['txnId'] ?? 'Wallet'}'),
+        title: Text('${row['txnId'] ?? row['relatedTransactionId'] ?? 'Ledger'}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Amount  ${rupee(asNum(row['amount']))}', style: const TextStyle(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            Text('Type  ${row['transactionType'] ?? 'CREDIT'}'),
-            Text('Date  ${row['date'] ?? ''}'),
-            Text('Remark  ${row['remark'] ?? row['note'] ?? '—'}'),
+            Text('Type  ${row['transactionType'] ?? ''}'),
+            Text('Amount  ${rupee(asNum(row['amount'] ?? row['rechargeAmount']))}'),
+            Text('Previous  ${rupee(asNum(row['previousBalance']))}'),
+            if (row['expectedBalance'] != null) Text('Expected  ${rupee(asNum(row['expectedBalance']))}'),
+            Text('New / Actual  ${rupee(asNum(row['newBalance'] ?? row['actualBalance']))}'),
+            Text('Commission  ${rupee(asNum(row['commission']))}'),
+            Text('Reference  ${row['referenceId'] ?? row['relatedTransactionId'] ?? '—'}'),
+            Text('Reason  ${row['description'] ?? row['remark'] ?? '—'}'),
             Text('Created by  ${row['createdBy'] ?? ''}'),
-            Text('Created  ${row['createdAt'] ?? ''}'),
-            Text('Updated  ${row['updatedAt'] ?? ''}'),
+            Text('Date  ${row['date'] ?? row['createdAt'] ?? ''}'),
           ],
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
@@ -177,15 +151,16 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
+    final label = _service == 'ctopup' ? 'CTOPUP' : 'CBP';
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.nested,
-        title: const Text('Wallet'),
+        title: Text('$label Wallet'),
         actions: [IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh))],
       ),
       floatingActionButton: widget.auth.canWrite
           ? FloatingActionButton.extended(
-              onPressed: () => _save(null),
+              onPressed: () => _money(withdraw: false),
               icon: const Icon(Icons.add),
               label: const Text('Add Amount'),
             )
@@ -201,12 +176,31 @@ class _WalletPageState extends State<WalletPage> {
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'cbp', label: Text('CBP'), icon: Icon(Icons.receipt_long_outlined)),
+                ButtonSegment(value: 'ctopup', label: Text('CTOPUP'), icon: Icon(Icons.payments_outlined)),
+              ],
+              selected: {_service},
+              onSelectionChanged: (v) {
+                setState(() {
+                  _service = v.first;
+                  _page = 1;
+                });
+                _load();
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: _Summary(
               added: _added,
               used: _used,
               commission: _commission,
               remaining: _remaining,
-              onAdd: widget.auth.canWrite ? () => _save(null) : null,
+              service: label,
+              onAdd: widget.auth.canWrite ? () => _money(withdraw: false) : null,
+              onWithdraw: widget.auth.canWrite ? () => _money(withdraw: true) : null,
             ),
           ),
           Padding(
@@ -216,49 +210,49 @@ class _WalletPageState extends State<WalletPage> {
               runSpacing: 12,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'ledger', label: Text('Wallet History')),
+                    ButtonSegment(value: 'commission', label: Text('Commission History')),
+                  ],
+                  selected: {_tab},
+                  onSelectionChanged: (v) {
+                    setState(() {
+                      _tab = v.first;
+                      _page = 1;
+                    });
+                    _load();
+                  },
+                ),
                 SizedBox(
                   width: 240,
                   child: TextField(
                     controller: _search,
                     onChanged: _onSearch,
-                    decoration: const InputDecoration(hintText: 'Search ID / remark', prefixIcon: Icon(Icons.search), isDense: true),
+                    decoration: const InputDecoration(hintText: 'Search ID / mobile / reference', prefixIcon: Icon(Icons.search), isDense: true),
                   ),
                 ),
-                SizedBox(
-                  width: 140,
-                  child: DropdownButtonFormField<String>(
-                    // ignore: deprecated_member_use
-                    value: _type,
-                    decoration: const InputDecoration(labelText: 'Type', isDense: true),
-                    items: const [
-                      DropdownMenuItem(value: 'All', child: Text('All')),
-                      DropdownMenuItem(value: 'CREDIT', child: Text('Credit')),
-                    ],
-                    onChanged: (v) {
-                      _type = v ?? 'CREDIT';
-                      _page = 1;
-                      _load();
-                    },
+                if (_tab == 'ledger')
+                  SizedBox(
+                    width: 150,
+                    child: DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _type,
+                      decoration: const InputDecoration(labelText: 'Type', isDense: true),
+                      items: const [
+                        DropdownMenuItem(value: 'All', child: Text('All')),
+                        DropdownMenuItem(value: 'CREDIT', child: Text('Credit')),
+                        DropdownMenuItem(value: 'DEBIT', child: Text('Debit')),
+                        DropdownMenuItem(value: 'USAGE', child: Text('Usage')),
+                        DropdownMenuItem(value: 'REVERSAL', child: Text('Reversal')),
+                      ],
+                      onChanged: (v) {
+                        _type = v ?? 'All';
+                        _page = 1;
+                        _load();
+                      },
+                    ),
                   ),
-                ),
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _min,
-                    onSubmitted: (_) { _page = 1; _load(); },
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Min amount', isDense: true),
-                  ),
-                ),
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _max,
-                    onSubmitted: (_) { _page = 1; _load(); },
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Max amount', isDense: true),
-                  ),
-                ),
                 InputChip(
                   label: Text(_from == null ? 'From' : 'From ${DateFormat('dd/MM/yyyy').format(_from!)}'),
                   onPressed: () async {
@@ -279,7 +273,7 @@ class _WalletPageState extends State<WalletPage> {
                   },
                   onDeleted: _to == null ? null : () { setState(() { _to = null; _page = 1; }); _load(); },
                 ),
-                Text(_total == 0 ? '0 rows' : '$_total credits', style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600)),
+                Text(_total == 0 ? '0 rows' : '$_total entries', style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600)),
                 IconButton(onPressed: _page <= 1 || _loading ? null : () { _page -= 1; _load(); }, icon: const Icon(Icons.chevron_left)),
                 IconButton(onPressed: _loading || (_page * _limit) >= _total ? null : () { _page += 1; _load(); }, icon: const Icon(Icons.chevron_right)),
               ],
@@ -289,7 +283,7 @@ class _WalletPageState extends State<WalletPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _rows.isEmpty
-                    ? const Center(child: FadeIn(child: Text('Abhi koi wallet credit nahi. + Add Amount dabao.', style: TextStyle(color: BsnlColors.muted))))
+                    ? Center(child: FadeIn(child: Text(_tab == 'commission' ? 'Abhi koi commission nahi.' : 'Abhi koi wallet entry nahi. + Add Amount dabao.', style: const TextStyle(color: BsnlColors.muted))))
                     : FadeIn(
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 88),
@@ -301,36 +295,34 @@ class _WalletPageState extends State<WalletPage> {
                                 border: TableBorder.all(color: const Color(0xFF94A3B8), width: 1),
                                 headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
                                 headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                                columns: const [
-                                  DataColumn(label: Text('Txn ID')),
-                                  DataColumn(label: Text('Date')),
-                                  DataColumn(label: Text('Type')),
-                                  DataColumn(label: Text('Amount'), numeric: true),
-                                  DataColumn(label: Text('Remark')),
-                                  DataColumn(label: Text('Created by')),
-                                  DataColumn(label: Text('Actions')),
-                                ],
+                                columns: _tab == 'commission'
+                                    ? const [
+                                        DataColumn(label: Text('Date/Time')),
+                                        DataColumn(label: Text('Service')),
+                                        DataColumn(label: Text('Txn ID')),
+                                        DataColumn(label: Text('Recharge'), numeric: true),
+                                        DataColumn(label: Text('Previous'), numeric: true),
+                                        DataColumn(label: Text('Expected'), numeric: true),
+                                        DataColumn(label: Text('Actual'), numeric: true),
+                                        DataColumn(label: Text('Commission'), numeric: true),
+                                        DataColumn(label: Text('Status')),
+                                      ]
+                                    : const [
+                                        DataColumn(label: Text('Date')),
+                                        DataColumn(label: Text('Type')),
+                                        DataColumn(label: Text('Amount'), numeric: true),
+                                        DataColumn(label: Text('Previous'), numeric: true),
+                                        DataColumn(label: Text('New Balance'), numeric: true),
+                                        DataColumn(label: Text('Reason / source')),
+                                        DataColumn(label: Text('Reference')),
+                                        DataColumn(label: Text('Created by')),
+                                        DataColumn(label: Text('View')),
+                                      ],
                                 rows: [
                                   for (var i = 0; i < _rows.length; i++)
                                     DataRow(
                                       color: WidgetStateProperty.all(i.isEven ? Colors.white : const Color(0xFFF4F7FB)),
-                                      cells: [
-                                        DataCell(Text('${_rows[i]['txnId'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800))),
-                                        DataCell(Text('${_rows[i]['date'] ?? ''}')),
-                                        DataCell(Text('${_rows[i]['transactionType'] ?? 'CREDIT'}')),
-                                        DataCell(Text(rupee(asNum(_rows[i]['amount'])), style: const TextStyle(fontWeight: FontWeight.w800))),
-                                        DataCell(Text('${_rows[i]['remark'] ?? _rows[i]['note'] ?? ''}')),
-                                        DataCell(Text('${_rows[i]['createdBy'] ?? ''}')),
-                                        DataCell(Row(
-                                          children: [
-                                            IconButton(tooltip: 'View', icon: const Icon(Icons.visibility_outlined), onPressed: () => _details(_rows[i])),
-                                            if (widget.auth.canWrite) ...[
-                                              IconButton(icon: const Icon(Icons.edit_outlined, color: BsnlColors.navy), onPressed: () => _save(_rows[i])),
-                                              IconButton(icon: const Icon(Icons.delete_outline, color: Color(0xFFC62828)), onPressed: () => _delete(_rows[i])),
-                                            ],
-                                          ],
-                                        )),
-                                      ],
+                                      cells: _tab == 'commission' ? _commissionCells(_rows[i]) : _ledgerCells(_rows[i]),
                                     ),
                                 ],
                               ),
@@ -343,15 +335,55 @@ class _WalletPageState extends State<WalletPage> {
       ),
     );
   }
+
+  List<DataCell> _commissionCells(Map<String, dynamic> row) {
+    return [
+      DataCell(Text('${row['createdAt'] ?? row['date'] ?? ''}')),
+      DataCell(Text('${row['service'] ?? row['serviceType'] ?? _service.toUpperCase()}')),
+      DataCell(Text('${row['relatedTransactionId'] ?? row['txnId'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w800))),
+      DataCell(Text(rupee(asNum(row['rechargeAmount'] ?? row['amount'])))),
+      DataCell(Text(rupee(asNum(row['previousBalance'])))),
+      DataCell(Text(rupee(asNum(row['expectedBalance'])))),
+      DataCell(Text(rupee(asNum(row['actualBalance'] ?? row['newBalance'])))),
+      DataCell(Text(rupee(asNum(row['commission'])), style: const TextStyle(fontWeight: FontWeight.w800))),
+      DataCell(Text('${row['status'] ?? row['transactionType'] ?? ''}')),
+    ];
+  }
+
+  List<DataCell> _ledgerCells(Map<String, dynamic> row) {
+    final type = '${row['transactionType'] ?? ''}';
+    final signed = type == 'CREDIT' || type == 'REVERSAL' ? '+' : '-';
+    return [
+      DataCell(Text('${row['date'] ?? row['createdAt'] ?? ''}')),
+      DataCell(Text(type, style: const TextStyle(fontWeight: FontWeight.w800))),
+      DataCell(Text('$signed${rupee(asNum(row['amount']))}', style: const TextStyle(fontWeight: FontWeight.w800))),
+      DataCell(Text(rupee(asNum(row['previousBalance'])))),
+      DataCell(Text(rupee(asNum(row['newBalance'])))),
+      DataCell(Text('${row['description'] ?? row['remark'] ?? row['note'] ?? ''}')),
+      DataCell(Text('${row['referenceId'] ?? row['relatedTransactionId'] ?? row['txnId'] ?? ''}')),
+      DataCell(Text('${row['createdBy'] ?? ''}')),
+      DataCell(IconButton(tooltip: 'View', icon: const Icon(Icons.visibility_outlined), onPressed: () => _details(row))),
+    ];
+  }
 }
 
 class _Summary extends StatelessWidget {
-  const _Summary({required this.added, required this.used, required this.commission, required this.remaining, this.onAdd});
+  const _Summary({
+    required this.added,
+    required this.used,
+    required this.commission,
+    required this.remaining,
+    required this.service,
+    this.onAdd,
+    this.onWithdraw,
+  });
   final num added;
   final num used;
   final num commission;
   final num remaining;
+  final String service;
   final VoidCallback? onAdd;
+  final VoidCallback? onWithdraw;
 
   @override
   Widget build(BuildContext context) {
@@ -378,10 +410,10 @@ class _Summary extends StatelessWidget {
     final row = LayoutBuilder(
       builder: (context, box) {
         final cards = [
-          card('Total Added', rupee(added), const [Color(0xFF0B3D91), Color(0xFF3B82F6)]),
-          card('Total Used', rupee(used), const [Color(0xFF0E7490), Color(0xFF06B6D4)]),
-          card('Total Commission', rupee(commission), const [Color(0xFFB45309), Color(0xFFF59E0B)]),
-          card('Current Balance', rupee(remaining), const [Color(0xFF0F766E), Color(0xFF14B8A6)]),
+          card('$service Balance', rupee(remaining), const [Color(0xFF0F766E), Color(0xFF14B8A6)]),
+          card('Total Credits', rupee(added), const [Color(0xFF0B3D91), Color(0xFF3B82F6)]),
+          card('Total Recharge', rupee(used), const [Color(0xFF0E7490), Color(0xFF06B6D4)]),
+          card('$service Commission', rupee(commission), const [Color(0xFFB45309), Color(0xFFF59E0B)]),
         ];
         if (box.maxWidth < 720) {
           return Column(
@@ -402,11 +434,14 @@ class _Summary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         row,
-        if (onAdd != null) ...[
+        if (onAdd != null || onWithdraw != null) ...[
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Add Amount')),
+          Wrap(
+            spacing: 8,
+            children: [
+              if (onAdd != null) FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Add Amount')),
+              if (onWithdraw != null) OutlinedButton.icon(onPressed: onWithdraw, icon: const Icon(Icons.remove), label: const Text('Withdraw')),
+            ],
           ),
         ],
       ],
@@ -415,8 +450,9 @@ class _Summary extends StatelessWidget {
 }
 
 class _WalletForm extends StatefulWidget {
-  const _WalletForm({this.initial});
-  final Map<String, dynamic>? initial;
+  const _WalletForm({required this.withdraw, required this.service});
+  final bool withdraw;
+  final String service;
 
   @override
   State<_WalletForm> createState() => _WalletFormState();
@@ -430,10 +466,9 @@ class _WalletFormState extends State<_WalletForm> {
   @override
   void initState() {
     super.initState();
-    _amount = TextEditingController(text: widget.initial == null ? '' : '${widget.initial?['amount'] ?? ''}');
-    _remark = TextEditingController(text: '${widget.initial?['remark'] ?? widget.initial?['note'] ?? ''}');
-    final raw = '${widget.initial?['date'] ?? ''}';
-    _date = raw.isEmpty ? DateTime.now() : (DateTime.tryParse(raw) ?? DateTime.now());
+    _amount = TextEditingController();
+    _remark = TextEditingController();
+    _date = DateTime.now();
   }
 
   @override
@@ -445,9 +480,9 @@ class _WalletFormState extends State<_WalletForm> {
 
   @override
   Widget build(BuildContext context) {
-    final add = widget.initial == null;
+    final label = widget.service == 'ctopup' ? 'CTOPUP' : 'CBP';
     return AlertDialog(
-      title: Text(add ? 'Add wallet amount' : 'Edit wallet amount'),
+      title: Text(widget.withdraw ? 'Withdraw $label amount' : 'Add $label amount'),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -460,7 +495,7 @@ class _WalletFormState extends State<_WalletForm> {
               decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ '),
             ),
             const SizedBox(height: 12),
-            TextField(controller: _remark, decoration: const InputDecoration(labelText: 'Remark / note')),
+            TextField(controller: _remark, decoration: InputDecoration(labelText: widget.withdraw ? 'Reason' : 'Remark / source')),
             const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -482,7 +517,7 @@ class _WalletFormState extends State<_WalletForm> {
             'remark': _remark.text.trim(),
             'date': DateFormat('yyyy-MM-dd').format(_date),
           }),
-          child: Text(add ? 'Add' : 'Update'),
+          child: Text(widget.withdraw ? 'Withdraw' : 'Add'),
         ),
       ],
     );

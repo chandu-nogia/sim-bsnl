@@ -1,58 +1,52 @@
 'use strict';
 
-const { moneyNumber, moneyText } = require('./password');
+const { calculateUsageCommission, validateUsage, fromPaise } = require('./money');
 
-function rateOf(envName, fallback) {
-  const n = Number(process.env[envName]);
-  return Number.isFinite(n) && n >= 0 ? n : fallback;
-}
-
-function commissionConfig() {
+function publicConfig() {
   return {
-    cbpPercent: rateOf('CBP_COMMISSION_PERCENT', 1),
-    ctopupPercent: rateOf('CTOPUP_COMMISSION_PERCENT', 2),
+    commissionMode: 'actual-minus-expected',
+    formula: 'commission = actualBalance - (previousBalance - transactionAmount)',
     ctopupTypes: ['Recharge', 'Activation', 'Replacement', 'Port', 'Other'],
   };
 }
 
-function calcCommission(amount, percent) {
-  const value = moneyNumber((moneyNumber(amount) * moneyNumber(percent)) / 100);
-  return {
-    value,
-    text: moneyText(value),
-    rate: moneyNumber(percent),
-  };
-}
-
-function calculateCBPCommission(amount) {
-  return calcCommission(amount, commissionConfig().cbpPercent);
-}
-
-function calculateCTOPUPCommission(amount) {
-  return calcCommission(amount, commissionConfig().ctopupPercent);
-}
-
-function applyCommission(section, row) {
-  const out = section === 'ctopup' ? calculateCTOPUPCommission(row.amount) : calculateCBPCommission(row.amount);
-  row.commission = out.text;
-  row.commissionNum = out.value;
-  row.commissionRate = out.rate;
+function applyCommissionFromBalances(row, previousPaise) {
+  const { toPaise } = require('./money');
+  const amount = toPaise(row.amount);
+  const actual = toPaise(row.actualBalance ?? row.balance);
+  if (!amount.ok || amount.paise <= 0 || !actual.ok) {
+    row.commission = '0.00';
+    row.commissionNum = 0;
+    row.commissionPaise = 0;
+    row.previousBalancePaise = previousPaise || 0;
+    row.expectedBalancePaise = (previousPaise || 0) - (amount.ok ? amount.paise : 0);
+    return row;
+  }
+  const calc = calculateUsageCommission({
+    previousPaise: previousPaise || 0,
+    amountPaise: amount.paise,
+    actualPaise: actual.paise,
+  });
+  row.amountPaise = calc.amountPaise;
+  row.commission = calc.commission;
+  row.commissionNum = calc.commissionPaise / 100;
+  row.commissionPaise = calc.commissionPaise;
+  row.previousBalance = calc.previous;
+  row.previousBalancePaise = calc.previousPaise;
+  row.expectedBalance = calc.expected;
+  row.expectedBalancePaise = calc.expectedPaise;
+  row.actualBalance = calc.actual;
+  row.actualBalancePaise = calc.actualPaise;
+  row.balance = calc.actual;
+  row.balanceNum = calc.actualPaise / 100;
+  row.balancePaise = calc.actualPaise;
   return row;
 }
 
-function publicConfig() {
-  const c = commissionConfig();
-  return {
-    cbpCommissionPercent: c.cbpPercent,
-    ctopupCommissionPercent: c.ctopupPercent,
-    ctopupTypes: c.ctopupTypes,
-  };
-}
-
 module.exports = {
-  commissionConfig,
-  calculateCBPCommission,
-  calculateCTOPUPCommission,
-  applyCommission,
   publicConfig,
+  calculateUsageCommission,
+  validateUsage,
+  applyCommissionFromBalances,
+  fromPaise,
 };

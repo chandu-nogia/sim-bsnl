@@ -24,13 +24,25 @@ const { ownerDashboard } = require('./lib/summary');
 const {
   setWallet,
   getWallet,
-  recomputeBalances,
   listTransactions,
   addTransaction,
   updateTransaction,
   removeTransaction,
   ensureOpeningCredit,
 } = require('./lib/wallet');
+const {
+  getService,
+  listLedger,
+  listCommission,
+  listServiceTransactions,
+  addMoney,
+  withdraw,
+  applyUsage,
+  reverseByRef,
+  snapshotBoth,
+  migrateLegacy,
+  ensureWallet,
+} = require('./lib/service_wallet');
 const { publicConfig } = require('./lib/commission');
 const { ensureIndexes } = require('./lib/indexes');
 const { loginGuard, loginClear } = require('./lib/rate_limit');
@@ -125,7 +137,7 @@ function writeMeta(req) {
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-6' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-7' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -204,9 +216,13 @@ app.get('/api/me', requireUser, async (req, res) => {
   }
 });
 
-app.get('/api/dashboard', requireUser, async (_req, res) => {
+app.get('/api/dashboard', requireUser, async (req, res) => {
   try {
-    const data = await ownerDashboard(await getDb());
+    const data = await ownerDashboard(await getDb(), {
+      from: req.query?.from || '',
+      to: req.query?.to || '',
+      period: req.query?.period || '',
+    });
     res.json({ ok: true, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
@@ -278,6 +294,100 @@ app.delete('/api/wallet/transactions/:id', requireUser, async (req, res) => {
     const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await removeTransaction(await getDb(), req.params.id, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+function serviceParam(req) {
+  return req.params.service || req.params.serviceType || '';
+}
+
+app.get('/api/wallet/:service/balance', requireUser, async (req, res) => {
+  try {
+    send(res, await getService(await getDb(), serviceParam(req)));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/wallet/:service/ledger', requireUser, async (req, res) => {
+  try {
+    const s = scoped(req);
+    if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+    send(res, await listLedger(await getDb(), serviceParam(req), s));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/wallet/:service/transactions', requireUser, async (req, res) => {
+  try {
+    const s = scoped(req);
+    if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+    send(res, await listServiceTransactions(await getDb(), serviceParam(req), s));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/wallet/:service/commission', requireUser, async (req, res) => {
+  try {
+    const s = scoped(req);
+    if (!s.ok) return res.status(s.status).json({ ok: false, error: s.error });
+    send(res, await listCommission(await getDb(), serviceParam(req), s));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/:service/add-money', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await addMoney(await getDb(), serviceParam(req), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/:service/withdraw', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await withdraw(await getDb(), serviceParam(req), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/:service/transaction', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await applyUsage(await getDb(), serviceParam(req), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/:service/reversal', requireUser, async (req, res) => {
+  try {
+    const w = writeMeta(req);
+    if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
+    send(res, await reverseByRef(await getDb(), serviceParam(req), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.get('/api/wallet/:service', requireUser, async (req, res) => {
+  try {
+    const name = String(serviceParam(req) || '').toLowerCase();
+    if (name === 'summary' || name === 'transactions') {
+      return send(res, await getWallet(await getDb()));
+    }
+    send(res, await getService(await getDb(), serviceParam(req)));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }
@@ -389,7 +499,10 @@ async function start() {
     const { backfillDateKeys } = require('./lib/dates');
     await backfillDateKeys(db);
     await ensureOpeningCredit(db);
-    await recomputeBalances(db);
+    await ensureWallet(db, 'CBP');
+    await ensureWallet(db, 'CTOPUP');
+    await migrateLegacy(db);
+    await snapshotBoth(db);
     await ensureIndexes(db);
     console.log('Owner account and Khatushyamji location ready');
   } catch (e) {

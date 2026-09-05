@@ -36,6 +36,20 @@ async function ensureIndexes(db) {
   jobs.push(db.collection('activity').createIndex({ locationId: 1, at: -1 }));
   jobs.push(db.collection('activity').createIndex({ email: 1, at: -1 }));
   jobs.push(db.collection('activity').createIndex({ action: 1, at: -1 }));
+  jobs.push(db.collection('wallets').createIndex({ serviceType: 1, locationId: 1 }, { unique: true }));
+  jobs.push(db.collection('wallet_ledger').createIndex({ locationId: 1, serviceType: 1, id: -1 }));
+  jobs.push(db.collection('wallet_ledger').createIndex({ serviceType: 1, transactionType: 1, createdAt: -1 }));
+  jobs.push(db.collection('wallet_ledger').createIndex({ dateKey: 1, id: -1 }));
+  jobs.push(db.collection('wallet_ledger').createIndex(
+    { serviceType: 1, locationId: 1, relatedTransactionId: 1, transactionType: 1 },
+    {
+      unique: true,
+      partialFilterExpression: {
+        relatedTransactionId: { $type: 'string', $gt: '' },
+        transactionType: 'USAGE',
+      },
+    },
+  ));
   const results = await Promise.allSettled(jobs);
   for (const r of results) {
     if (r.status === 'rejected') {

@@ -28,6 +28,9 @@ class _DashboardHomeState extends State<DashboardHome> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic> _data = {};
+  String _period = 'all';
+  DateTime? _from;
+  DateTime? _to;
 
   @override
   void initState() {
@@ -41,7 +44,12 @@ class _DashboardHomeState extends State<DashboardHome> {
       _error = null;
     });
     try {
-      final json = await widget.auth.api.dashboard(widget.auth.apiBase);
+      final json = await widget.auth.api.dashboard(
+        widget.auth.apiBase,
+        period: _period == 'all' || _period == 'custom' ? null : _period,
+        from: _from == null ? null : '${_from!.year}-${_from!.month.toString().padLeft(2, '0')}-${_from!.day.toString().padLeft(2, '0')}',
+        to: _to == null ? null : '${_to!.year}-${_to!.month.toString().padLeft(2, '0')}-${_to!.day.toString().padLeft(2, '0')}',
+      );
       setState(() => _data = json);
     } catch (e) {
       setState(() => _error = '$e');
@@ -100,12 +108,44 @@ class _DashboardHomeState extends State<DashboardHome> {
             _ErrorBanner(message: _error!, onRetry: _load),
           ],
           const SizedBox(height: 16),
-          _WalletCard(
-            added: asNum(_totals['totalAdded'] ?? _totals['walletAmount']),
-            used: asNum(_totals['totalUsed'] ?? _totals['combinedAmount']),
-            commission: asNum(_totals['combinedCommission']),
-            remaining: asNum(_totals['combinedBalance']),
-            onAdd: () => widget.onOpenSection?.call('wallet'),
+          _PeriodChips(
+            period: _period,
+            onPick: (key) async {
+              if (key == 'custom') {
+                final pickerContext = context;
+                if (!pickerContext.mounted) return;
+                final from = await showDatePicker(context: pickerContext, initialDate: _from ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035));
+                if (from == null || !pickerContext.mounted) return;
+                final to = await showDatePicker(context: pickerContext, initialDate: _to ?? from, firstDate: from, lastDate: DateTime(2035));
+                if (to == null || !mounted) return;
+                setState(() {
+                  _period = 'custom';
+                  _from = from;
+                  _to = to;
+                });
+              } else {
+                setState(() {
+                  _period = key;
+                  _from = null;
+                  _to = null;
+                });
+              }
+              await _load();
+            },
+          ),
+          const SizedBox(height: 16),
+          _ServiceWallets(
+            cbpBalance: asNum(_totals['cbcBalance']),
+            cbpAmount: asNum(_totals['cbcAmount']),
+            cbpCommission: asNum(_totals['cbcCommission']),
+            cbpToday: asNum(_totals['cbcTodayCommission']),
+            cbpMonth: asNum(_totals['cbcMonthCommission']),
+            topBalance: asNum(_totals['ctopupBalance']),
+            topAmount: asNum(_totals['ctopupAmount']),
+            topCommission: asNum(_totals['ctopupCommission']),
+            topToday: asNum(_totals['ctopupTodayCommission']),
+            topMonth: asNum(_totals['ctopupMonthCommission']),
+            onOpen: (s) => widget.onOpenSection?.call(s),
           ),
           const SizedBox(height: 16),
           _SectionTitle('Overview', 'Khatushyamji totals'),
@@ -153,7 +193,7 @@ class _DashboardHomeState extends State<DashboardHome> {
               _Kpi(
                 title: 'Wallet Balance',
                 value: rupee(asNum(_totals['combinedBalance'])),
-                subtitle: 'Added ${rupee(asNum(_totals['totalAdded'] ?? _totals['walletAmount']))}  −  used  +  commission',
+                subtitle: 'CBP ${rupee(asNum(_totals['cbcBalance']))}  +  CTOPUP ${rupee(asNum(_totals['ctopupBalance']))}',
                 icon: Icons.savings_outlined,
                 colors: const [Color(0xFF0F766E), Color(0xFF14B8A6)],
                 onTap: () => widget.onOpenSection?.call('wallet'),
@@ -178,6 +218,14 @@ class _DashboardHomeState extends State<DashboardHome> {
           _SectionTitle('Period calculations', 'Today, 7 days, this month'),
           const SizedBox(height: 10),
           _PeriodTable(today: _today, week: _week, month: _month),
+          const SizedBox(height: 20),
+          _SectionTitle('Recent CBP / CTOPUP', 'Latest transactions — amount ≠ commission'),
+          const SizedBox(height: 10),
+          _RecentSplit(cbp: asMaps(_data['recentCbp']), top: asMaps(_data['recentCtopup'])),
+          const SizedBox(height: 20),
+          _SectionTitle('Recent wallet entries', 'Credits, usage, reversals'),
+          const SizedBox(height: 10),
+          _RecentSplit(cbp: asMaps(_data['recentCbpLedger']), top: asMaps(_data['recentCtopupLedger']), ledger: true),
           const SizedBox(height: 20),
           _SectionTitle('Last 7 days', 'CBP + CTOPUP amount'),
           const SizedBox(height: 10),
@@ -211,79 +259,160 @@ class _DashboardHomeState extends State<DashboardHome> {
 
 }
 
-class _WalletCard extends StatelessWidget {
-  const _WalletCard({
-    required this.added,
-    required this.used,
-    required this.commission,
-    required this.remaining,
-    this.onAdd,
-  });
-  final num added;
-  final num used;
-  final num commission;
-  final num remaining;
-  final VoidCallback? onAdd;
+class _PeriodChips extends StatelessWidget {
+  const _PeriodChips({required this.period, required this.onPick});
+  final String period;
+  final Future<void> Function(String key) onPick;
 
   @override
   Widget build(BuildContext context) {
-    Widget tile(String label, String value, Color color) {
-      return Expanded(
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+    Widget chip(String key, String label) {
+      final on = period == key;
+      return FilterChip(
+        selected: on,
+        label: Text(label),
+        onSelected: (_) => onPick(key),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        chip('all', 'All'),
+        chip('today', 'Today'),
+        chip('yesterday', 'Yesterday'),
+        chip('7d', 'Last 7 Days'),
+        chip('month', 'This Month'),
+        chip('custom', 'Custom Range'),
+      ],
+    );
+  }
+}
+
+class _ServiceWallets extends StatelessWidget {
+  const _ServiceWallets({
+    required this.cbpBalance,
+    required this.cbpAmount,
+    required this.cbpCommission,
+    required this.cbpToday,
+    required this.cbpMonth,
+    required this.topBalance,
+    required this.topAmount,
+    required this.topCommission,
+    required this.topToday,
+    required this.topMonth,
+    this.onOpen,
+  });
+  final num cbpBalance;
+  final num cbpAmount;
+  final num cbpCommission;
+  final num cbpToday;
+  final num cbpMonth;
+  final num topBalance;
+  final num topAmount;
+  final num topCommission;
+  final num topToday;
+  final num topMonth;
+  final void Function(String section)? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget card(String title, Color color, List<String> lines, String section) {
+      return InkWell(
+        onTap: () => onOpen?.call(section),
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+            color: color.withValues(alpha: 0.08),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12)),
-              const SizedBox(height: 4),
-              Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+              Text(title, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 8),
+              for (final line in lines)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(line, style: const TextStyle(fontWeight: FontWeight.w700, color: BsnlColors.navyDark)),
+                ),
             ],
           ),
         ),
       );
     }
 
+    final cbp = card('CBP Wallet', const Color(0xFF15803D), [
+      'Balance  ${rupee(cbpBalance)}',
+      'Recharge  ${rupee(cbpAmount)}',
+      'Commission  ${rupee(cbpCommission)}',
+      "Today's commission  ${rupee(cbpToday)}",
+      "This month  ${rupee(cbpMonth)}",
+    ], 'cbc');
+    final top = card('CTOPUP Wallet', const Color(0xFF7C3AED), [
+      'Balance  ${rupee(topBalance)}',
+      'Recharge  ${rupee(topAmount)}',
+      'Commission  ${rupee(topCommission)}',
+      "Today's commission  ${rupee(topToday)}",
+      "This month  ${rupee(topMonth)}",
+    ], 'ctopup');
+
+    return LayoutBuilder(
+      builder: (context, box) {
+        if (box.maxWidth < 720) {
+          return Column(children: [cbp, const SizedBox(height: 10), top]);
+        }
+        return Row(children: [Expanded(child: cbp), const SizedBox(width: 12), Expanded(child: top)]);
+      },
+    );
+  }
+}
+
+class _RecentSplit extends StatelessWidget {
+  const _RecentSplit({required this.cbp, required this.top, this.ledger = false});
+  final List<Map<String, dynamic>> cbp;
+  final List<Map<String, dynamic>> top;
+  final bool ledger;
+
+  Widget _col(String title, List<Map<String, dynamic>> rows) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text('Wallet ledger', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+              const SizedBox(height: 8),
+              if (rows.isEmpty) const Text('No recent entries', style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600)),
+              for (final r in rows.take(6))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    ledger
+                        ? '${r['transactionType'] ?? ''}  ${rupee(asNum(r['amount']))}  →  ${rupee(asNum(r['newBalance']))}'
+                        : '${r['transactionId'] ?? r['id'] ?? ''}  amt ${rupee(asNum(r['amount']))}  comm ${rupee(asNum(r['commission']))}  bal ${rupee(asNum(r['actualBalance'] ?? r['balance']))}',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                  ),
                 ),
-                FilledButton.icon(onPressed: onAdd, icon: const Icon(Icons.add), label: const Text('Add Amount')),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text('Balance credit transactions se nikalta hai. Amount use, commission add.', style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 14),
-            LayoutBuilder(
-              builder: (context, box) {
-                final tiles = [
-                  tile('Total Added', rupee(added), const Color(0xFF0B3D91)),
-                  tile('Total Used', rupee(used), const Color(0xFF0E7490)),
-                  tile('Total Commission', rupee(commission), const Color(0xFFB45309)),
-                  tile('Current Balance', rupee(remaining), const Color(0xFF0F766E)),
-                ];
-                if (box.maxWidth < 640) {
-                  return Column(
-                    children: [
-                      Row(children: [tiles[0], const SizedBox(width: 8), tiles[1]]),
-                      const SizedBox(height: 8),
-                      Row(children: [tiles[2], const SizedBox(width: 8), tiles[3]]),
-                    ],
-                  );
-                }
-                return Row(children: [tiles[0], const SizedBox(width: 8), tiles[1], const SizedBox(width: 8), tiles[2], const SizedBox(width: 8), tiles[3]]);
-              },
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final left = _col(ledger ? 'CBP ledger' : 'CBP transactions', cbp);
+        final right = _col(ledger ? 'CTOPUP ledger' : 'CTOPUP transactions', top);
+        if (box.maxWidth < 720) {
+          return Column(children: [left, const SizedBox(height: 10), right]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: left), const SizedBox(width: 12), Expanded(child: right)]);
+      },
     );
   }
 }

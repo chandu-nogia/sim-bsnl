@@ -74,29 +74,12 @@ function publicTxn(row) {
 }
 
 async function snapshot(db) {
-  const loc = await khatuLocation(db);
-  const locQ = loc ? khatuQuery(loc) : { locationId: 1 };
-  const [wallet, cbc, ctopup] = await Promise.all([
-    creditSum(db, locQ),
-    moneySum(db, 'cbc', locQ),
-    moneySum(db, 'ctopup', locQ),
-  ]);
-  const combinedAmount = roundMoney(cbc.amount + ctopup.amount);
-  const combinedCommission = roundMoney(cbc.commission + ctopup.commission);
-  const remaining = remainingOf(wallet, combinedAmount, combinedCommission);
+  const { snapshotBoth } = require('./service_wallet');
+  const both = await snapshotBoth(db);
   return {
-    walletAmount: wallet,
-    totalAdded: wallet,
-    totalUsed: combinedAmount,
-    remainingBalance: remaining,
-    cbcAmount: cbc.amount,
-    cbcCommission: cbc.commission,
-    cbcNet: remainingOf(0, cbc.amount, cbc.commission),
-    ctopupAmount: ctopup.amount,
-    ctopupCommission: ctopup.commission,
-    ctopupNet: remainingOf(0, ctopup.amount, ctopup.commission),
-    combinedAmount,
-    combinedCommission,
+    ...both,
+    cbcNet: remainingOf(0, both.cbcAmount, both.cbcCommission),
+    ctopupNet: remainingOf(0, both.ctopupAmount, both.ctopupCommission),
   };
 }
 
@@ -125,50 +108,8 @@ async function assertNotNegative(db, delta, message) {
 }
 
 async function recomputeBalances(db) {
-  const loc = await khatuLocation(db);
-  const locQ = loc ? khatuQuery(loc) : { locationId: 1 };
-  const wallet = await creditSum(db, locQ);
-  const project = {
-    _id: 1,
-    dateKey: 1,
-    date: 1,
-    id: 1,
-    amountNum: 1,
-    amount: 1,
-    commissionNum: 1,
-    commission: 1,
-  };
-  const [cbcRows, topRows] = await Promise.all([
-    db.collection('cbc').find(withAlive(locQ)).project(project).toArray(),
-    db.collection('ctopup').find(withAlive(locQ)).project(project).toArray(),
-  ]);
-  const all = [
-    ...cbcRows.map((r) => ({ ...r, col: 'cbc' })),
-    ...topRows.map((r) => ({ ...r, col: 'ctopup' })),
-  ].sort((a, b) => {
-    const ka = a.dateKey || dateKeyOf(a.date) || '';
-    const kb = b.dateKey || dateKeyOf(b.date) || '';
-    if (ka !== kb) return ka < kb ? -1 : 1;
-    const ida = Number(a.id) || 0;
-    const idb = Number(b.id) || 0;
-    if (ida !== idb) return ida - idb;
-    return String(a.col).localeCompare(String(b.col));
-  });
-  let remaining = wallet;
-  const bulk = { cbc: [], ctopup: [] };
-  for (const r of all) {
-    remaining = remainingOf(remaining, moneyNumber(r.amountNum ?? r.amount), moneyNumber(r.commissionNum ?? r.commission));
-    bulk[r.col].push({
-      updateOne: {
-        filter: { _id: r._id },
-        update: { $set: { balance: moneyText(remaining), balanceNum: remaining } },
-      },
-    });
-  }
-  if (bulk.cbc.length) await db.collection('cbc').bulkWrite(bulk.cbc, { ordered: true });
-  if (bulk.ctopup.length) await db.collection('ctopup').bulkWrite(bulk.ctopup, { ordered: true });
-  await snapshot(db);
-  return remaining;
+  const snap = await snapshot(db);
+  return snap.remainingBalance;
 }
 
 async function ensureOpeningCredit(db) {
@@ -250,35 +191,9 @@ function pickCredit(body) {
 }
 
 async function addTransaction(db, body, meta) {
-  const picked = pickCredit(body);
-  if (picked.error) return { status: 400, json: { ok: false, error: picked.error } };
-  const loc = await khatuLocation(db);
-  const id = await nextId(db, 'wallet_txns');
-  const now = new Date().toISOString();
-  const saved = {
-    id,
-    txnId: `WLT-${String(id).padStart(6, '0')}`,
-    ...picked.row,
-    locationId: Number(meta.locationId || loc?.id) || 1,
-    locationName: meta.locationName || loc?.name || 'Khatushyamji',
-    createdBy: meta.email || '',
-    createdAt: now,
-    updatedAt: now,
-  };
-  await db.collection('wallet_txns').insertOne(saved);
-  await logActivity(db, {
-    email: meta.email,
-    role: meta.role,
-    name: meta.name,
-    action: 'add',
-    section: 'wallet',
-    locationId: saved.locationId,
-    locationName: saved.locationName,
-    recordId: id,
-    detail: `${meta.name || meta.email} added wallet CREDIT ₹${saved.amount} (${saved.txnId})`,
-  });
-  await recomputeBalances(db);
-  return { status: 200, json: { ok: true, row: publicTxn(saved), ...(await snapshot(db)) } };
+  const { addMoney } = require('./service_wallet');
+  const service = String(body?.serviceType || body?.service || 'CBP');
+  return addMoney(db, service, body, meta);
 }
 
 async function updateTransaction(db, idRaw, body, meta) {

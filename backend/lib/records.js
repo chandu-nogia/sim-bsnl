@@ -7,22 +7,25 @@ const { locationMatchQuery } = require('./location_resolve');
 const { withAlive } = require('./alive');
 const { dateKeyOf, applyDateRange, applyAmountRange, sortSpec } = require('./dates');
 const { moneyNumber, moneyText, parseAmount } = require('./password');
-const { recomputeBalances, snapshot, assertNotNegative } = require('./wallet');
-const { applyCommission, publicConfig } = require('./commission');
+const { publicConfig } = require('./commission');
+const { applyUsage, reverseUsage, isFailedStatus, snapshotBoth } = require('./service_wallet');
 
 function moneyFields(b) {
   const parsed = parseAmount(b.amount, { required: false, allowZero: true });
   const amount = parsed.ok ? parsed.text : String(b.amount ?? '').trim();
   const amountNum = parsed.ok ? parsed.value : moneyNumber(b.amount);
+  const actualRaw = b.actualBalance ?? b.balance;
+  const actual = actualRaw === undefined || actualRaw === '' ? { ok: true, text: '', value: 0 } : parseAmount(actualRaw, { required: false, allowZero: true });
   return {
     amount,
     amountNum,
+    actualBalance: actual.ok ? actual.text : String(actualRaw ?? ''),
     commission: '0.00',
     commissionNum: 0,
-    commissionRate: 0,
-    balance: '',
-    balanceNum: 0,
+    balance: actual.ok ? actual.text : '',
+    balanceNum: actual.ok ? actual.value : 0,
     _amountError: parsed.ok ? null : parsed.error,
+    _actualError: actual.ok ? null : actual.error,
   };
 }
 
@@ -42,9 +45,12 @@ function publicCbc(row) {
     amountNum: moneyNumber(row.amountNum ?? row.amount),
     commission: row.commission || moneyText(row.commissionNum),
     commissionNum: moneyNumber(row.commissionNum ?? row.commission),
-    commissionRate: moneyNumber(row.commissionRate),
-    balance: row.balance || moneyText(row.balanceNum),
-    balanceNum: moneyNumber(row.balanceNum ?? row.balance),
+    previousBalance: row.previousBalance || moneyText((row.previousBalancePaise || 0) / 100),
+    expectedBalance: row.expectedBalance || moneyText((row.expectedBalancePaise || 0) / 100),
+    actualBalance: row.actualBalance || row.balance || moneyText(row.balanceNum),
+    balance: row.balance || row.actualBalance || moneyText(row.balanceNum),
+    balanceNum: moneyNumber(row.balanceNum ?? row.actualBalance ?? row.balance),
+    transactionStatus: row.transactionStatus || (row.deletedAt ? 'REVERSED' : 'SUCCESS'),
     transactionId: row.transactionId || '',
     note: row.note || '',
     createdBy: row.createdBy || '',
@@ -70,7 +76,7 @@ function pickCbc(body) {
 }
 
 function validateCbc(row) {
-  return row._amountError || null;
+  return row._amountError || row._actualError || null;
 }
 
 function publicCtopup(row) {
@@ -89,9 +95,12 @@ function publicCtopup(row) {
     type: row.type || '',
     commission: row.commission || moneyText(row.commissionNum),
     commissionNum: moneyNumber(row.commissionNum ?? row.commission),
-    commissionRate: moneyNumber(row.commissionRate),
-    balance: row.balance || moneyText(row.balanceNum),
-    balanceNum: moneyNumber(row.balanceNum ?? row.balance),
+    previousBalance: row.previousBalance || moneyText((row.previousBalancePaise || 0) / 100),
+    expectedBalance: row.expectedBalance || moneyText((row.expectedBalancePaise || 0) / 100),
+    actualBalance: row.actualBalance || row.balance || moneyText(row.balanceNum),
+    balance: row.balance || row.actualBalance || moneyText(row.balanceNum),
+    balanceNum: moneyNumber(row.balanceNum ?? row.actualBalance ?? row.balance),
+    transactionStatus: row.transactionStatus || (row.deletedAt ? 'REVERSED' : 'SUCCESS'),
     status: row.status || 'Pending',
     transactionId: row.transactionId || '',
     note: row.note || '',
@@ -119,11 +128,48 @@ function pickCtopup(body) {
 }
 
 function validateCtopup(row) {
-  return row._amountError || null;
+  return row._amountError || row._actualError || null;
 }
 
 function actorLabel(meta) {
   return meta.name || meta.email || 'Staff';
+}
+
+function applyCalc(row, calc) {
+  row.commission = calc.commission;
+  row.commissionNum = calc.commissionPaise / 100;
+  row.commissionPaise = calc.commissionPaise;
+  row.previousBalance = calc.previous;
+  row.previousBalancePaise = calc.previousPaise;
+  row.expectedBalance = calc.expected;
+  row.expectedBalancePaise = calc.expectedPaise;
+  row.actualBalance = calc.actual;
+  row.actualBalancePaise = calc.actualPaise;
+  row.amountPaise = calc.amountPaise;
+  row.balance = calc.actual;
+  row.balanceNum = calc.actualPaise / 100;
+  row.walletApplied = true;
+  row.transactionStatus = 'SUCCESS';
+  return row;
+}
+
+async function applyRowUsage(db, section, row, meta, ref) {
+  if (!(moneyNumber(row.amountNum) > 0) || isFailedStatus(row.status)) {
+    row.walletApplied = false;
+    row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : 'SUCCESS';
+    return { status: 200 };
+  }
+  const usage = await applyUsage(db, section, {
+    amount: row.amount,
+    actualBalance: row.actualBalance || row.balance,
+    transactionId: ref,
+    recordId: ref,
+    status: row.status,
+    date: row.dateKey || row.date,
+  }, meta);
+  if (usage.status !== 200) return usage;
+  if (usage.json.calc) applyCalc(row, usage.json.calc);
+  return { status: 200 };
 }
 
 function makeCrud(collection, pick, validate, toPublic, section) {
@@ -143,14 +189,21 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const col = db.collection(collection);
       const total = await col.countDocuments(q);
       const rows = await col.find(q).sort(sortSpec(scope)).skip(skip).limit(limit).toArray();
-      const snap = await snapshot(db);
+      const snap = await snapshotBoth(db);
+      const svc = section === 'ctopup' ? snap.ctopup : snap.cbp;
       return {
         rows: rows.map(toPublic),
         total,
         page,
         limit,
-        walletAmount: snap.walletAmount,
-        remainingBalance: snap.remainingBalance,
+        walletAmount: svc.totalCreditsNum,
+        remainingBalance: svc.currentBalanceNum,
+        previousBalance: svc.currentBalance,
+        cbpBalance: snap.cbpBalance,
+        ctopupBalance: snap.ctopupBalance,
+        totalCommission: svc.totalCommissionNum,
+        totalAdded: svc.totalCreditsNum,
+        totalUsed: svc.totalTransactionAmountNum,
         ...publicConfig(),
       };
     },
@@ -158,13 +211,9 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       const picked = pick(body);
       const err = validate(picked);
       if (err) return { status: 400, json: { ok: false, error: err } };
-      const row = applyCommission(section, picked);
-      delete row._amountError;
-      const blocked = await assertNotNegative(db, {
-        extraUsed: moneyNumber(row.amountNum),
-        extraCommission: moneyNumber(row.commissionNum),
-      }, 'Wallet mein itna balance nahi hai. Pehle Wallet se amount add karo.');
-      if (blocked) return blocked;
+      delete picked._amountError;
+      delete picked._actualError;
+      const row = picked;
       if (row.transactionId && body?.force !== true) {
         const dup = await db.collection(collection).findOne(withAlive({
           locationId: Number(meta.locationId),
@@ -178,6 +227,9 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         }
       }
       const id = await nextId(db, collection);
+      const ref = row.transactionId || String(id);
+      const applied = await applyRowUsage(db, section, row, meta, ref);
+      if (applied.status !== 200) return applied;
       const now = new Date().toISOString();
       const saved = {
         id,
@@ -189,7 +241,14 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         createdAt: now,
         updatedAt: now,
       };
-      await db.collection(collection).insertOne(saved);
+      try {
+        await db.collection(collection).insertOne(saved);
+      } catch (e) {
+        if (row.walletApplied) {
+          await reverseUsage(db, section, { ...saved, id }, meta);
+        }
+        throw e;
+      }
       const moneyBit = row.amount ? ` of ₹${row.amount}` : '';
       await logActivity(db, {
         email: meta.email,
@@ -201,7 +260,6 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         locationName: saved.locationName,
         detail: `${actorLabel(meta)} added ${section === 'ctopup' ? 'C-TopUp transaction' : 'CBP record'}${moneyBit} in ${saved.locationName}`,
       });
-      await recomputeBalances(db);
       const fresh = await db.collection(collection).findOne({ id });
       return { status: 200, json: { ok: true, row: toPublic(fresh || saved) } };
     },
@@ -214,16 +272,45 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
+      if (existing.transactionStatus === 'REVERSED') {
+        return { status: 400, json: { ok: false, error: 'Reversed transaction edit nahi hoti' } };
+      }
       const picked = pick({ ...toPublic(existing), ...body });
       const err = validate(picked);
       if (err) return { status: 400, json: { ok: false, error: err } };
-      const row = applyCommission(section, picked);
-      delete row._amountError;
-      const moneyBlock = await assertNotNegative(db, {
-        extraUsed: moneyNumber(row.amountNum) - moneyNumber(existing.amountNum ?? existing.amount),
-        extraCommission: moneyNumber(row.commissionNum) - moneyNumber(existing.commissionNum ?? existing.commission),
-      }, 'Is update se wallet balance negative ho jayega.');
-      if (moneyBlock) return moneyBlock;
+      delete picked._amountError;
+      delete picked._actualError;
+      const row = picked;
+      const moneyChanged = moneyNumber(row.amountNum) !== moneyNumber(existing.amountNum ?? existing.amount)
+        || String(row.actualBalance || row.balance) !== String(existing.actualBalance || existing.balance)
+        || String(row.status || '') !== String(existing.status || '');
+      const wasApplied = existing.walletApplied !== false
+        && existing.transactionStatus !== 'FAILED'
+        && existing.transactionStatus !== 'REVERSED'
+        && !isFailedStatus(existing.status);
+      const shouldApply = moneyNumber(row.amountNum) > 0 && !isFailedStatus(row.status);
+      if (moneyChanged && wasApplied) {
+        const rev = await reverseUsage(db, section, existing, meta);
+        if (rev.status !== 200) return rev;
+      }
+      if (shouldApply && (moneyChanged || !wasApplied)) {
+        const usage = await applyRowUsage(db, section, row, meta, `${row.transactionId || existing.id}-U${Date.now()}`);
+        if (usage.status !== 200) {
+          if (moneyChanged && wasApplied) {
+            await applyUsage(db, section, {
+              amount: existing.amount,
+              actualBalance: existing.actualBalance || existing.balance,
+              transactionId: `${existing.transactionId || existing.id}-RESTORE`,
+              status: existing.status,
+              date: existing.dateKey || existing.date,
+            }, meta);
+          }
+          return usage;
+        }
+      } else if (!shouldApply) {
+        row.walletApplied = false;
+        row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : existing.transactionStatus || 'SUCCESS';
+      }
       const saved = {
         ...row,
         id,
@@ -245,7 +332,6 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         locationName: saved.locationName,
         detail: `${actorLabel(meta)} updated ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} ₹${moneyText(existing.amountNum)} → ₹${row.amount} in ${saved.locationName}`,
       });
-      await recomputeBalances(db);
       const fresh = await db.collection(collection).findOne({ id });
       return { status: 200, json: { ok: true, row: toPublic(fresh || saved) } };
     },
@@ -258,22 +344,32 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       if (!existing) return { status: 404, json: { ok: false, error: 'Entry nahi mili' } };
       const blocked = await assertRow(existing);
       if (blocked) return blocked;
+      const rev = await reverseUsage(db, section, existing, meta);
+      if (rev.status !== 200) return rev;
       await db.collection(collection).updateOne(
         { _id: existing._id },
-        { $set: { deletedAt: new Date().toISOString(), deletedBy: meta.email || '', updatedAt: new Date().toISOString() } },
+        {
+          $set: {
+            transactionStatus: 'REVERSED',
+            walletApplied: false,
+            updatedAt: new Date().toISOString(),
+            reversedBy: meta.email || '',
+            reversedAt: new Date().toISOString(),
+          },
+        },
       );
       await logActivity(db, {
         email: meta.email,
         role: meta.role,
         name: meta.name,
-        action: 'delete',
+        action: 'update',
         section,
         locationId: existing.locationId,
         locationName: existing.locationName || '',
-        detail: `${actorLabel(meta)} deleted ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} record in ${existing.locationName || ''}`,
+        detail: `${actorLabel(meta)} reversed ${section === 'ctopup' ? 'C-TopUp' : 'CBP'} record in ${existing.locationName || ''}`,
       });
-      await recomputeBalances(db);
-      return { status: 200, json: { ok: true } };
+      const fresh = await db.collection(collection).findOne({ id });
+      return { status: 200, json: { ok: true, reversed: true, row: toPublic(fresh || existing) } };
     },
   };
 }

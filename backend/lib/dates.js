@@ -64,7 +64,7 @@ function sortSpec(scope) {
 }
 
 async function backfillDateKeys(db) {
-  for (const name of ['sims', 'cbc', 'ctopup', 'wallet_txns']) {
+  for (const name of ['sims', 'cbc', 'ctopup', 'wallet_txns', 'wallet_ledger']) {
     const col = db.collection(name);
     const rows = await col.find({
       $or: [{ dateKey: { $exists: false } }, { dateKey: null }, { dateKey: '' }],

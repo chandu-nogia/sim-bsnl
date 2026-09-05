@@ -10,7 +10,7 @@ import '../state/auth_store.dart';
 import '../util/format.dart';
 import '../widgets/fade_in.dart';
 
-enum RecordFieldKind { text, date, choice, computed, commission }
+enum RecordFieldKind { text, date, choice, computed, commission, actualBalance }
 
 class RecordField {
   const RecordField(
@@ -70,6 +70,7 @@ class _RecordsPageState extends State<RecordsPage> {
   DateTime? _to;
   num _wallet = 0;
   num _remaining = 0;
+  num _commission = 0;
 
   bool get _hasStatus {
     for (final f in widget.fields) {
@@ -142,6 +143,7 @@ class _RecordsPageState extends State<RecordsPage> {
         _limit = out.limit == 0 ? _limit : out.limit;
         _wallet = out.walletAmount;
         _remaining = out.remainingBalance;
+        _commission = out.totalCommission;
       });
     } catch (e) {
       setState(() => _error = '$e');
@@ -204,14 +206,14 @@ class _RecordsPageState extends State<RecordsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete?'),
-        content: Text('Delete ${row['name'] ?? id}? This cannot be undone from the list.'),
+        title: const Text('Reverse transaction?'),
+        content: Text('Reverse ${row['name'] ?? row['transactionId'] ?? id}? Original row rahegi. Wallet aur commission restore honge. History delete nahi hogi.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFC62828)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: const Text('Reverse'),
           ),
         ],
       ),
@@ -304,7 +306,7 @@ class _RecordsPageState extends State<RecordsPage> {
                     border: Border.all(color: const Color(0xFF6EE7B7)),
                   ),
                   child: Text(
-                    'Current balance ${rupee(_remaining)}   ·   Added ${rupee(_wallet)} − used + commission',
+                    'Wallet ${rupee(_remaining)}   ·   Commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                   ),
                 ),
@@ -541,8 +543,16 @@ class _RecordsPageState extends State<RecordsPage> {
         child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
       );
     }
-    if (f.key == 'amount' || f.key == 'commission' || f.key == 'balance') {
-      return Text(rupee(asNum(row[f.key] ?? row['${f.key}Num'])), style: const TextStyle(fontWeight: FontWeight.w700));
+    if (f.key == 'amount' || f.key == 'commission' || f.key == 'balance' || f.key == 'actualBalance') {
+      final reversed = '${row['transactionStatus'] ?? ''}' == 'REVERSED';
+      return Text(
+        rupee(asNum(row[f.key] ?? row['${f.key}Num'])),
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          decoration: reversed && f.key == 'amount' ? TextDecoration.lineThrough : null,
+          color: reversed ? BsnlColors.muted : null,
+        ),
+      );
     }
     return Text(text);
   }
@@ -573,16 +583,15 @@ class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, TextEditingController> _ctrls;
   late final Map<String, DateTime> _dates;
   late final Map<String, String> _choices;
-  num _cbpPct = 1;
-  num _topPct = 2;
+  num _previous = 0;
 
   @override
   void initState() {
     super.initState();
     _ctrls = {
       for (final f in widget.fields)
-        if (f.kind == RecordFieldKind.text)
-          f.key: TextEditingController(text: '${widget.initial?[f.key] ?? ''}'),
+        if (f.kind == RecordFieldKind.text || f.kind == RecordFieldKind.actualBalance)
+          f.key: TextEditingController(text: '${widget.initial?[f.key] ?? widget.initial?['actualBalance'] ?? ''}'),
     };
     _dates = {
       for (final f in widget.fields)
@@ -596,27 +605,27 @@ class _RecordFormPageState extends State<RecordFormPage> {
     _ctrls['amount']?.addListener(() {
       if (mounted) setState(() {});
     });
-    _loadRates();
+    _ctrls['balance']?.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _previous = asNum(widget.initial?['previousBalance']);
+    _loadWallet();
   }
 
-  Future<void> _loadRates() async {
+  Future<void> _loadWallet() async {
     final auth = widget.auth;
-    if (auth == null) return;
+    if (auth == null || widget.commissionModule == null) return;
     try {
-      final json = await auth.api.appConfig(auth.apiBase);
+      final json = await auth.api.serviceWallet(auth.apiBase, widget.commissionModule!);
       if (!mounted) return;
-      setState(() {
-        _cbpPct = asNum(json['cbpCommissionPercent'] == 0 ? 1 : json['cbpCommissionPercent']);
-        _topPct = asNum(json['ctopupCommissionPercent'] == 0 ? 2 : json['ctopupCommissionPercent']);
-      });
+      setState(() => _previous = asNum(json['currentBalance'] ?? json['currentBalanceNum']));
     } catch (_) {}
   }
 
-  num _autoCommission() {
-    final amt = asNum(_ctrls['amount']?.text);
-    final pct = widget.commissionModule == 'ctopup' ? _topPct : _cbpPct;
-    return ((amt * pct) / 100 * 100).round() / 100;
-  }
+  num get _amount => asNum(_ctrls['amount']?.text);
+  num get _actual => asNum(_ctrls['balance']?.text);
+  num get _expected => _previous - _amount;
+  num get _previewCommission => _actual - _expected;
 
   String _choiceValue(RecordField f, String raw) {
     if (f.options.contains(raw)) return raw;
@@ -632,17 +641,24 @@ class _RecordFormPageState extends State<RecordFormPage> {
   }
 
   Map<String, String> _body() {
-    return {
+    final out = <String, String>{
       for (final f in widget.fields)
         if (f.kind != RecordFieldKind.computed && f.kind != RecordFieldKind.commission)
           f.key: switch (f.kind) {
             RecordFieldKind.date => DateFormat('dd/MM/yyyy').format(_dates[f.key]!),
             RecordFieldKind.choice => _choices[f.key] ?? '',
             RecordFieldKind.text => _ctrls[f.key]!.text.trim(),
+            RecordFieldKind.actualBalance => _ctrls[f.key]!.text.trim(),
             RecordFieldKind.computed => '',
             RecordFieldKind.commission => '',
           },
     };
+    final actual = out['balance'] ?? out['actualBalance'] ?? '';
+    if (actual.isNotEmpty) {
+      out['actualBalance'] = actual;
+      out['balance'] = actual;
+    }
+    return out;
   }
 
   Future<void> _pick(String key) async {
@@ -673,8 +689,13 @@ class _RecordFormPageState extends State<RecordFormPage> {
             const SizedBox(height: 16),
             if (widget.commissionModule != null) ...[
               Text(
-                'Commission auto: ${widget.commissionModule == 'ctopup' ? _topPct : _cbpPct}% of amount. Edit nahi hogi.',
+                'Commission = Actual Balance − (Previous − Amount). Backend confirm karega. Amount commission nahi hai.',
                 style: const TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Previous ${rupee(_previous)}   ·   Expected ${rupee(_expected)}   ·   Commission ${rupee(_previewCommission)}',
+                style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
             ],
@@ -707,15 +728,25 @@ class _RecordFormPageState extends State<RecordFormPage> {
                       keyboardType: f.keyboard,
                       decoration: InputDecoration(labelText: f.label),
                     ),
+                  RecordFieldKind.actualBalance => TextField(
+                      controller: _ctrls[f.key],
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: f.label,
+                        helperText: 'Transaction ke baad wallet mein jo balance bacha',
+                        prefixText: '₹ ',
+                      ),
+                    ),
                   RecordFieldKind.commission => InputDecorator(
                       decoration: InputDecoration(
                         labelText: f.label,
                         suffixText: 'Auto',
+                        helperText: 'Recharge amount nahi. Expected se extra balance.',
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                       ),
                       child: Text(
-                        rupee(_autoCommission()),
+                        rupee(_previewCommission),
                         style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                       ),
                     ),

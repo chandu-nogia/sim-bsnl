@@ -319,7 +319,25 @@ async function locationSummary(db, user, locationId) {
   return { status: 200, json: { ok: true, location: row } };
 }
 
-async function ownerDashboard(db) {
+function periodRange(period) {
+  const today = startOfDay();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  if (period === 'today') return { from: iso(today), to: iso(today) };
+  if (period === 'yesterday') {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    return { from: iso(y), to: iso(y) };
+  }
+  if (period === '7d' || period === 'week') {
+    const s = new Date(today);
+    s.setDate(s.getDate() - 6);
+    return { from: iso(s), to: iso(today) };
+  }
+  if (period === 'month') return { from: iso(startOfMonth()), to: iso(today) };
+  return { from: '', to: '' };
+}
+
+async function ownerDashboard(db, scope = {}) {
   const { khatuLocation, khatuQuery, LOCATION_NAME } = require('./site');
   const loc = await khatuLocation(db);
   const locQ = loc ? khatuQuery(loc) : { locationId: 1 };
@@ -366,7 +384,9 @@ async function ownerDashboard(db) {
   }
 
   async function moneyGroup(collection, extra) {
-    const match = extra ? { $and: [locQ, extra] } : locQ;
+    const match = extra
+      ? { $and: [locQ, extra, { transactionStatus: { $nin: ['REVERSED'] } }] }
+      : { $and: [locQ, { transactionStatus: { $nin: ['REVERSED'] } }] };
     const rows = await db.collection(collection).aggregate([
       { $match: withAlive(match) },
       {
@@ -482,28 +502,78 @@ async function ownerDashboard(db) {
   const failed = ctopupStatus.Failed || ctopupStatus.failed || { n: 0, amount: 0 };
 
   const { snapshot, remainingOf } = require('./wallet');
+  const { periodCommission, publicLedger } = require('./service_wallet');
   const snap = await snapshot(db);
+  const todayIso = isoDay(todayStart);
+  const monthIso = isoDay(monthStart);
+  const [cbpTodayComm, cbpMonthComm, topTodayComm, topMonthComm, recentCbp, recentTop, recentCbpLedger, recentTopLedger] = await Promise.all([
+    periodCommission(db, 'CBP', todayIso, todayIso),
+    periodCommission(db, 'CBP', monthIso, todayIso),
+    periodCommission(db, 'CTOPUP', todayIso, todayIso),
+    periodCommission(db, 'CTOPUP', monthIso, todayIso),
+    db.collection('cbc').find(alive).sort({ id: -1 }).limit(8).toArray(),
+    db.collection('ctopup').find(alive).sort({ id: -1 }).limit(8).toArray(),
+    db.collection('wallet_ledger').find(withAlive({ serviceType: 'CBP' })).sort({ id: -1 }).limit(8).toArray(),
+    db.collection('wallet_ledger').find(withAlive({ serviceType: 'CTOPUP' })).sort({ id: -1 }).limit(8).toArray(),
+  ]);
+
+  const picked = periodRange(scope.period);
+  const filterFrom = String(scope.from || picked.from || '').trim();
+  const filterTo = String(scope.to || picked.to || '').trim();
 
   return {
     locationName: loc?.name || LOCATION_NAME,
     generatedAt: now.toISOString(),
+    period: { from: filterFrom, to: filterTo, key: scope.period || '' },
     sims,
     cbc: cbcAll.n,
     ctopup: topAll.n,
+    cbpWallet: snap.cbp,
+    ctopupWallet: snap.ctopup,
+    recentCbp: recentCbp.map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: r.amount,
+      commission: r.commission,
+      previousBalance: r.previousBalance,
+      expectedBalance: r.expectedBalance,
+      actualBalance: r.actualBalance || r.balance,
+      transactionId: r.transactionId,
+      mobile: r.mobile,
+      status: r.transactionStatus || 'SUCCESS',
+    })),
+    recentCtopup: recentTop.map((r) => ({
+      id: r.id,
+      date: r.date,
+      amount: r.amount,
+      commission: r.commission,
+      previousBalance: r.previousBalance,
+      expectedBalance: r.expectedBalance,
+      actualBalance: r.actualBalance || r.balance,
+      transactionId: r.transactionId,
+      mobile: r.number,
+      status: r.transactionStatus || r.status || 'SUCCESS',
+    })),
+    recentCbpLedger: recentCbpLedger.map(publicLedger),
+    recentCtopupLedger: recentTopLedger.map(publicLedger),
     totals: {
       records: sims + cbcAll.n + topAll.n,
-      walletAmount: snap.walletAmount,
+      walletAmount: snap.remainingBalance,
       totalAdded: snap.totalAdded,
       totalUsed: snap.totalUsed,
-      cbcAmount: cbcAll.amount,
-      ctopupAmount: topAll.amount,
-      combinedAmount: Math.round((cbcAll.amount + topAll.amount) * 100) / 100,
-      cbcCommission: cbcAll.commission,
-      ctopupCommission: topAll.commission,
-      combinedCommission: Math.round((cbcAll.commission + topAll.commission) * 100) / 100,
-      cbcBalance: remainingOf(snap.walletAmount, cbcAll.amount, cbcAll.commission),
-      ctopupBalance: remainingOf(snap.walletAmount, topAll.amount, topAll.commission),
+      cbcAmount: snap.cbcAmount,
+      ctopupAmount: snap.ctopupAmount,
+      combinedAmount: snap.combinedAmount,
+      cbcCommission: snap.cbcCommission,
+      ctopupCommission: snap.ctopupCommission,
+      combinedCommission: snap.combinedCommission,
+      cbcBalance: snap.cbpBalance,
+      ctopupBalance: snap.ctopupBalance,
       combinedBalance: snap.remainingBalance,
+      cbcTodayCommission: cbpTodayComm.amountNum,
+      ctopupTodayCommission: topTodayComm.amountNum,
+      cbcMonthCommission: cbpMonthComm.amountNum,
+      ctopupMonthCommission: topMonthComm.amountNum,
       cbcNet: snap.cbcNet,
       ctopupNet: snap.ctopupNet,
       avgCbc: cbcAll.n ? Math.round((cbcAll.amount / cbcAll.n) * 100) / 100 : 0,
