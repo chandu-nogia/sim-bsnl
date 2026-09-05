@@ -9,6 +9,7 @@ const { dateKeyOf, applyDateRange, applyAmountRange, sortSpec } = require('./dat
 const { moneyNumber, moneyText, parseAmount } = require('./password');
 const { publicConfig } = require('./commission');
 const { applyUsage, reverseUsage, isFailedStatus, snapshotBoth } = require('./service_wallet');
+const { usageApiFields } = require('./money');
 
 function moneyFields(b) {
   const parsed = parseAmount(b.amount, { required: false, allowZero: true });
@@ -101,8 +102,16 @@ function publicCtopup(row) {
     amount: row.amount || moneyText(row.amountNum),
     amountNum: moneyNumber(row.amountNum ?? row.amount),
     type: row.type || '',
-    commission: row.commission || moneyText(row.commissionNum),
-    commissionNum: moneyNumber(row.commissionNum ?? row.commission),
+    commission: moneyText(
+      row.commissionPaise != null && row.commissionPaise !== ''
+        ? Number(row.commissionPaise) / 100
+        : (row.commissionNum ?? row.commission),
+    ),
+    commissionNum: moneyNumber(
+      row.commissionPaise != null && row.commissionPaise !== ''
+        ? Number(row.commissionPaise) / 100
+        : (row.commissionNum ?? row.commission),
+    ),
     previousBalance: row.previousBalance || moneyText((row.previousBalancePaise || 0) / 100),
     expectedBalance: row.expectedBalance || moneyText((row.expectedBalancePaise || 0) / 100),
     actualBalance: row.actualBalance || row.balance || moneyText(row.balanceNum),
@@ -144,6 +153,8 @@ function actorLabel(meta) {
 }
 
 function applyCalc(row, calc) {
+  const newBalance = calc.newBalance || calc.actual;
+  const newPaise = calc.newBalancePaise ?? calc.actualPaise;
   row.commission = calc.commission;
   row.commissionNum = calc.commissionPaise / 100;
   row.commissionPaise = calc.commissionPaise;
@@ -151,11 +162,11 @@ function applyCalc(row, calc) {
   row.previousBalancePaise = calc.previousPaise;
   row.expectedBalance = calc.expected;
   row.expectedBalancePaise = calc.expectedPaise;
-  row.actualBalance = calc.actual;
-  row.actualBalancePaise = calc.actualPaise;
+  row.actualBalance = newBalance;
+  row.actualBalancePaise = newPaise;
   row.amountPaise = calc.amountPaise;
-  row.balance = calc.actual;
-  row.balanceNum = calc.actualPaise / 100;
+  row.balance = newBalance;
+  row.balanceNum = newPaise / 100;
   row.walletApplied = true;
   row.transactionStatus = 'SUCCESS';
   return row;
@@ -174,10 +185,13 @@ async function applyRowUsage(db, section, row, meta, ref) {
     recordId: ref,
     status: row.status,
     date: row.dateKey || row.date,
+    name: row.name,
+    mobile: row.mobile || row.number,
+    number: row.number,
   }, meta);
   if (usage.status !== 200) return usage;
   if (usage.json.calc) applyCalc(row, usage.json.calc);
-  return { status: 200 };
+  return usage;
 }
 
 function makeCrud(collection, pick, validate, toPublic, section) {
@@ -236,6 +250,8 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       }
       const id = await nextId(db, collection);
       const ref = row.transactionId || String(id);
+      delete row.commission;
+      delete row.commissionNum;
       const applied = await applyRowUsage(db, section, row, meta, ref);
       if (applied.status !== 200) return applied;
       const now = new Date().toISOString();
@@ -269,7 +285,20 @@ function makeCrud(collection, pick, validate, toPublic, section) {
         detail: `${actorLabel(meta)} added ${section === 'ctopup' ? 'C-TopUp transaction' : 'CBP record'}${moneyBit} in ${saved.locationName}`,
       });
       const fresh = await db.collection(collection).findOne({ id });
-      return { status: 200, json: { ok: true, row: toPublic(fresh || saved) } };
+      const service = section === 'ctopup' ? 'CTOPUP' : 'CBP';
+      const calc = applied.json && applied.json.calc;
+      return {
+        status: 200,
+        json: {
+          ok: true,
+          success: true,
+          row: toPublic(fresh || saved),
+          ...(calc ? usageApiFields(calc, { service, referenceId: ref }) : {}),
+          wallet: applied.json && applied.json.wallet,
+          ledger: applied.json && applied.json.ledger,
+          calc,
+        },
+      };
     },
     async update(db, idRaw, body, meta, assertRow) {
       const id = Number.parseInt(String(idRaw), 10);
@@ -289,37 +318,29 @@ function makeCrud(collection, pick, validate, toPublic, section) {
       delete picked._amountError;
       delete picked._actualError;
       const row = picked;
-      const moneyChanged = moneyNumber(row.amountNum) !== moneyNumber(existing.amountNum ?? existing.amount)
-        || String(row.actualBalance || row.balance) !== String(existing.actualBalance || existing.balance)
-        || String(row.status || '') !== String(existing.status || '');
+      delete row.commission;
+      delete row.commissionNum;
+      const amountChanged = moneyNumber(row.amountNum) !== moneyNumber(existing.amountNum ?? existing.amount)
+        || String(row.actualBalance || row.balance || '') !== String(existing.actualBalance || existing.balance || '');
+      const statusChanged = String(row.status || '') !== String(existing.status || '');
       const wasApplied = existing.walletApplied !== false
         && existing.transactionStatus !== 'FAILED'
         && existing.transactionStatus !== 'REVERSED'
         && !isFailedStatus(existing.status);
       const shouldApply = moneyNumber(row.amountNum) > 0 && !isFailedStatus(row.status);
-      if (moneyChanged && wasApplied) {
-        const rev = await reverseUsage(db, section, existing, meta);
-        if (rev.status !== 200) return rev;
+      if (wasApplied && (amountChanged || (statusChanged && isFailedStatus(row.status)))) {
+        return {
+          status: 400,
+          json: {
+            ok: false,
+            error: 'Successful transaction ki amount/commission edit nahi hoti. Reverse/adjustment se correct karo.',
+          },
+        };
       }
-      if (shouldApply && (moneyChanged || !wasApplied)) {
+      if (shouldApply && !wasApplied) {
         const usage = await applyRowUsage(db, section, row, meta, `${row.transactionId || existing.id}-U${Date.now()}`);
-        if (usage.status !== 200) {
-          if (moneyChanged && wasApplied) {
-            await applyUsage(db, section, {
-              amount: existing.amount,
-              actualBalance: existing.actualBalance || existing.balance,
-              transactionId: `${existing.transactionId || existing.id}-RESTORE`,
-              status: existing.status,
-              date: existing.dateKey || existing.date,
-            }, meta);
-          }
-          return usage;
-        }
-      } else if (!shouldApply) {
-        row.walletApplied = false;
-        row.transactionStatus = isFailedStatus(row.status) ? 'FAILED' : existing.transactionStatus || 'SUCCESS';
-      }
-      if (!moneyChanged) {
+        if (usage.status !== 200) return usage;
+      } else {
         row.commission = existing.commission;
         row.commissionNum = existing.commissionNum;
         row.commissionPaise = existing.commissionPaise;

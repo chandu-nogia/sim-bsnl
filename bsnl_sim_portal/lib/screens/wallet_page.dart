@@ -132,12 +132,13 @@ class _WalletPageState extends State<WalletPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Type  ${row['transactionType'] ?? ''}'),
+            Text('Type  ${row['type'] ?? row['transactionType'] ?? ''}'),
+            Text('Source  ${row['source'] ?? row['serviceType'] ?? ''}'),
             Text('Amount  ${rupee(asNum(row['amount'] ?? row['rechargeAmount']))}'),
-            Text('Previous  ${rupee(asNum(row['previousBalance']))}'),
-            if (row['expectedBalance'] != null) Text('Expected  ${rupee(asNum(row['expectedBalance']))}'),
-            Text('New / Actual  ${rupee(asNum(row['newBalance'] ?? row['actualBalance']))}'),
             Text('Commission  ${rupee(asNum(row['commission']))}'),
+            Text('Net impact  ${rupee(asNum(row['netImpact']))}'),
+            Text('Previous  ${rupee(asNum(row['previousBalance'] ?? row['balanceBefore']))}'),
+            Text('Current balance  ${rupee(asNum(row['newBalance'] ?? row['balanceAfter'] ?? row['actualBalance']))}'),
             Text('Reference  ${row['referenceId'] ?? row['relatedTransactionId'] ?? '—'}'),
             Text('Reason  ${row['description'] ?? row['remark'] ?? '—'}'),
             Text('Created by  ${row['createdBy'] ?? ''}'),
@@ -243,8 +244,9 @@ class _WalletPageState extends State<WalletPage> {
                         DropdownMenuItem(value: 'All', child: Text('All')),
                         DropdownMenuItem(value: 'CREDIT', child: Text('Credit')),
                         DropdownMenuItem(value: 'DEBIT', child: Text('Debit')),
-                        DropdownMenuItem(value: 'USAGE', child: Text('Usage')),
+                        DropdownMenuItem(value: 'USAGE', child: Text('Transaction')),
                         DropdownMenuItem(value: 'REVERSAL', child: Text('Reversal')),
+                        DropdownMenuItem(value: 'COMMISSION', child: Text('Commission')),
                       ],
                       onChanged: (v) {
                         _type = v ?? 'All';
@@ -309,13 +311,13 @@ class _WalletPageState extends State<WalletPage> {
                                       ]
                                     : const [
                                         DataColumn(label: Text('Date')),
+                                        DataColumn(label: Text('Service')),
                                         DataColumn(label: Text('Type')),
                                         DataColumn(label: Text('Amount'), numeric: true),
-                                        DataColumn(label: Text('Previous'), numeric: true),
-                                        DataColumn(label: Text('New Balance'), numeric: true),
-                                        DataColumn(label: Text('Reason / source')),
+                                        DataColumn(label: Text('Commission'), numeric: true),
+                                        DataColumn(label: Text('Net Impact'), numeric: true),
+                                        DataColumn(label: Text('Balance'), numeric: true),
                                         DataColumn(label: Text('Reference')),
-                                        DataColumn(label: Text('Created by')),
                                         DataColumn(label: Text('View')),
                                       ],
                                 rows: [
@@ -351,17 +353,16 @@ class _WalletPageState extends State<WalletPage> {
   }
 
   List<DataCell> _ledgerCells(Map<String, dynamic> row) {
-    final type = '${row['transactionType'] ?? ''}';
-    final signed = type == 'CREDIT' || type == 'REVERSAL' ? '+' : '-';
+    final type = '${row['type'] ?? row['transactionType'] ?? ''}';
     return [
       DataCell(Text('${row['date'] ?? row['createdAt'] ?? ''}')),
+      DataCell(Text('${row['service'] ?? row['serviceType'] ?? _service.toUpperCase()}')),
       DataCell(Text(type, style: const TextStyle(fontWeight: FontWeight.w800))),
-      DataCell(Text('$signed${rupee(asNum(row['amount']))}', style: const TextStyle(fontWeight: FontWeight.w800))),
-      DataCell(Text(rupee(asNum(row['previousBalance'])))),
-      DataCell(Text(rupee(asNum(row['newBalance'])))),
-      DataCell(Text('${row['description'] ?? row['remark'] ?? row['note'] ?? ''}')),
+      DataCell(Text(rupee(asNum(row['amount'])), style: const TextStyle(fontWeight: FontWeight.w800))),
+      DataCell(Text(rupee(asNum(row['commission'])))),
+      DataCell(Text(rupee(asNum(row['netImpact'])))),
+      DataCell(Text(rupee(asNum(row['newBalance'] ?? row['balanceAfter'])))),
       DataCell(Text('${row['referenceId'] ?? row['relatedTransactionId'] ?? row['txnId'] ?? ''}')),
-      DataCell(Text('${row['createdBy'] ?? ''}')),
       DataCell(IconButton(tooltip: 'View', icon: const Icon(Icons.visibility_outlined), onPressed: () => _details(row))),
     ];
   }
@@ -410,10 +411,10 @@ class _Summary extends StatelessWidget {
     final row = LayoutBuilder(
       builder: (context, box) {
         final cards = [
-          card('$service Balance', rupee(remaining), const [Color(0xFF0F766E), Color(0xFF14B8A6)]),
-          card('Total Credits', rupee(added), const [Color(0xFF0B3D91), Color(0xFF3B82F6)]),
-          card('Total Recharge', rupee(used), const [Color(0xFF0E7490), Color(0xFF06B6D4)]),
-          card('$service Commission', rupee(commission), const [Color(0xFFB45309), Color(0xFFF59E0B)]),
+          card('Current Wallet Balance', rupee(remaining), const [Color(0xFF0F766E), Color(0xFF14B8A6)]),
+          card('Total Added', rupee(added), const [Color(0xFF0B3D91), Color(0xFF3B82F6)]),
+          card('Total Used', rupee(used), const [Color(0xFF0E7490), Color(0xFF06B6D4)]),
+          card('Total Commission Earned', rupee(commission), const [Color(0xFFB45309), Color(0xFFF59E0B)]),
         ];
         if (box.maxWidth < 720) {
           return Column(
@@ -488,11 +489,24 @@ class _WalletFormState extends State<_WalletForm> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (!widget.withdraw)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final n in const [500, 1000, 5000, 10000])
+                    ActionChip(
+                      label: Text('+₹$n'),
+                      onPressed: () => setState(() => _amount.text = '$n'),
+                    ),
+                ],
+              ),
+            if (!widget.withdraw) const SizedBox(height: 12),
             TextField(
               controller: _amount,
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ '),
+              decoration: const InputDecoration(labelText: 'Custom amount', prefixText: '₹ '),
             ),
             const SizedBox(height: 12),
             TextField(controller: _remark, decoration: InputDecoration(labelText: widget.withdraw ? 'Reason' : 'Remark / source')),

@@ -556,6 +556,10 @@ async function ownerDashboard(db, scope = {}) {
     })),
     recentCbpLedger: recentCbpLedger.map(publicLedger),
     recentCtopupLedger: recentTopLedger.map(publicLedger),
+    recentWallet: [...recentCbpLedger, ...recentTopLedger]
+      .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))
+      .slice(0, 12)
+      .map(publicLedger),
     totals: {
       records: sims + cbcAll.n + topAll.n,
       walletAmount: snap.remainingBalance,

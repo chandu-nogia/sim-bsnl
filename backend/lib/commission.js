@@ -1,11 +1,20 @@
 'use strict';
 
-const { calculateUsageCommission, validateUsage, fromPaise } = require('./money');
+const {
+  computeUsage,
+  calculateUsageCommission,
+  validateUsage,
+  resolveUsageCommission,
+  configuredCommissionPaise,
+  fromPaise,
+} = require('./money');
 
 function publicConfig() {
   return {
-    commissionMode: 'actual-minus-expected',
-    formula: 'commission = actualBalance - (previousBalance - transactionAmount)',
+    commissionMode: 'balance-minus-amount-plus-commission',
+    formula: 'newBalance = oldBalance - amount + commission',
+    commissionPercent: 1,
+    commissionNote: 'Commission backend se automatic. Frontend value ignore hoti hai.',
     ctopupTypes: ['Recharge', 'Activation', 'Replacement', 'Port', 'Other'],
   };
 }
@@ -13,8 +22,7 @@ function publicConfig() {
 function applyCommissionFromBalances(row, previousPaise) {
   const { toPaise } = require('./money');
   const amount = toPaise(row.amount);
-  const actual = toPaise(row.actualBalance ?? row.balance);
-  if (!amount.ok || amount.paise <= 0 || !actual.ok) {
+  if (!amount.ok || amount.paise <= 0) {
     row.commission = '0.00';
     row.commissionNum = 0;
     row.commissionPaise = 0;
@@ -22,10 +30,15 @@ function applyCommissionFromBalances(row, previousPaise) {
     row.expectedBalancePaise = (previousPaise || 0) - (amount.ok ? amount.paise : 0);
     return row;
   }
-  const calc = calculateUsageCommission({
+  const resolved = resolveUsageCommission({
     previousPaise: previousPaise || 0,
     amountPaise: amount.paise,
-    actualPaise: actual.paise,
+    actualRaw: row.actualBalance ?? row.balance,
+  });
+  const calc = computeUsage({
+    previousPaise: previousPaise || 0,
+    amountPaise: amount.paise,
+    commissionPaise: resolved.ok ? resolved.commissionPaise : 0,
   });
   row.amountPaise = calc.amountPaise;
   row.commission = calc.commission;
@@ -35,11 +48,11 @@ function applyCommissionFromBalances(row, previousPaise) {
   row.previousBalancePaise = calc.previousPaise;
   row.expectedBalance = calc.expected;
   row.expectedBalancePaise = calc.expectedPaise;
-  row.actualBalance = calc.actual;
-  row.actualBalancePaise = calc.actualPaise;
-  row.balance = calc.actual;
-  row.balanceNum = calc.actualPaise / 100;
-  row.balancePaise = calc.actualPaise;
+  row.actualBalance = calc.newBalance;
+  row.actualBalancePaise = calc.newBalancePaise;
+  row.balance = calc.newBalance;
+  row.balanceNum = calc.newBalancePaise / 100;
+  row.balancePaise = calc.newBalancePaise;
   return row;
 }
 
@@ -48,5 +61,6 @@ module.exports = {
   calculateUsageCommission,
   validateUsage,
   applyCommissionFromBalances,
+  configuredCommissionPaise,
   fromPaise,
 };

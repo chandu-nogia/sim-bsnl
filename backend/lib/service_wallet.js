@@ -13,6 +13,8 @@ const {
   paiseOf,
   rupeeNum,
   validateUsage,
+  resolveUsageCommission,
+  usageApiFields,
   normalizeService,
 } = require('./money');
 
@@ -43,26 +45,63 @@ function publicWallet(row) {
   };
 }
 
+function ledgerDisplayType(row) {
+  const t = String(row.transactionType || '').toUpperCase();
+  if (t === 'USAGE') return 'TRANSACTION';
+  if (t === 'REVERSAL') return 'ADJUSTMENT';
+  return t || 'TRANSACTION';
+}
+
+function ledgerSource(row) {
+  if (row.source) return String(row.source).toUpperCase();
+  const t = String(row.transactionType || '').toUpperCase();
+  if (t === 'CREDIT') return 'MANUAL_DEPOSIT';
+  if (t === 'REVERSAL') return 'REFUND';
+  if (t === 'DEBIT') return 'ADJUSTMENT';
+  return String(row.serviceType || 'CBP').toUpperCase();
+}
+
 function publicLedger(row) {
   const id = Number(row.id);
+  const amountPaise = Number(row.amountPaise) || 0;
+  const commissionPaise = Number(row.commissionPaise) || 0;
+  const type = String(row.transactionType || '').toUpperCase();
+  let netPaise = Number(row.netImpactPaise);
+  if (!Number.isFinite(netPaise)) {
+    if (type === 'CREDIT') netPaise = amountPaise;
+    else if (type === 'DEBIT') netPaise = -amountPaise;
+    else if (type === 'REVERSAL') netPaise = amountPaise - Math.abs(commissionPaise);
+    else netPaise = -amountPaise + commissionPaise;
+  }
   return {
     id,
     rowIndex: id,
     walletId: row.walletId || null,
     serviceType: row.serviceType || '',
+    service: row.serviceType || '',
     txnId: row.txnId || `LED-${String(id).padStart(6, '0')}`,
     transactionId: row.txnId || '',
     transactionType: row.transactionType || '',
-    amount: fromPaise(row.amountPaise),
-    amountNum: rupeeNum(row.amountPaise),
+    type: ledgerDisplayType(row),
+    source: ledgerSource(row),
+    amount: fromPaise(amountPaise),
+    amountNum: rupeeNum(amountPaise),
     previousBalance: fromPaise(row.previousBalancePaise),
     newBalance: fromPaise(row.newBalancePaise),
-    commission: fromPaise(row.commissionPaise || 0),
+    balanceBefore: fromPaise(row.previousBalancePaise),
+    balanceAfter: fromPaise(row.newBalancePaise),
+    commission: fromPaise(commissionPaise),
+    commissionNum: rupeeNum(commissionPaise),
+    netImpact: fromPaise(netPaise),
+    netImpactNum: rupeeNum(netPaise),
     relatedTransactionId: row.relatedTransactionId || '',
-    referenceId: row.referenceId || '',
+    referenceId: row.referenceId || row.relatedTransactionId || '',
     description: row.description || row.remark || '',
     remark: row.description || row.remark || '',
     note: row.description || row.remark || '',
+    customerName: row.customerName || '',
+    mobile: row.mobile || '',
+    status: row.status || (type === 'REVERSAL' ? 'REVERSED' : 'SUCCESS'),
     createdBy: row.createdBy || '',
     createdAt: row.createdAt || '',
     date: row.date || (row.createdAt || '').slice(0, 10),
@@ -176,7 +215,9 @@ async function addMoney(db, serviceType, body, meta) {
     commissionPaise: 0,
     description: String(body?.remark || body?.note || 'Add money').trim(),
     referenceId: String(body?.referenceId || body?.reference || '').trim(),
-    source: String(body?.source || 'manual').trim() || 'manual',
+    source: 'MANUAL_DEPOSIT',
+    status: 'SUCCESS',
+    netImpactPaise: parsed.paise,
     createdBy: meta.email || '',
     date,
   });
@@ -220,6 +261,9 @@ async function withdraw(db, serviceType, body, meta) {
     commissionPaise: 0,
     description: String(body?.reason || body?.remark || body?.note || 'Withdraw').trim(),
     referenceId: String(body?.referenceId || '').trim(),
+    source: 'ADJUSTMENT',
+    status: 'SUCCESS',
+    netImpactPaise: -parsed.paise,
     createdBy: meta.email || '',
     date,
   });
@@ -241,26 +285,73 @@ function isFailedStatus(status) {
   return String(status || '').toLowerCase() === 'failed';
 }
 
-async function applyUsage(db, serviceType, body, meta) {
+function usagePayload(calc, { service, referenceId, wallet, ledger, duplicate }) {
+  return {
+    ok: true,
+    ...usageApiFields(calc, { service, referenceId }),
+    duplicate: Boolean(duplicate),
+    wallet: wallet ? publicWallet(wallet) : undefined,
+    ledger: ledger ? publicLedger(ledger) : undefined,
+    calc,
+  };
+}
+
+async function previewUsage(db, serviceType, body) {
+  const service = normalizeService(serviceType);
+  if (!service) return { status: 400, json: { ok: false, error: 'Service type CBP ya CTOPUP hona chahiye' } };
+  const amount = requirePositivePaise(body?.amount, 'Transaction amount');
+  if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
+  const wallet = await ensureWallet(db, service);
+  const previous = Number(wallet.currentBalancePaise) || 0;
+  const resolved = resolveUsageCommission({
+    previousPaise: previous,
+    amountPaise: amount.paise,
+    actualRaw: body?.actualBalance ?? body?.balance ?? body?.actual,
+  });
+  if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
+  const checked = validateUsage({
+    previousPaise: previous,
+    amountPaise: amount.paise,
+    commissionPaise: resolved.commissionPaise,
+  });
+  if (!checked.ok) {
+    return { status: 400, json: { ok: false, error: checked.error, code: checked.code || '', calc: checked.calc } };
+  }
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      ...usageApiFields(checked.calc, { service, referenceId: '' }),
+      wallet: publicWallet(wallet),
+      calc: checked.calc,
+    },
+  };
+}
+
+async function applyUsage(db, serviceType, body, meta = {}) {
   const service = normalizeService(serviceType);
   if (!service) return { status: 400, json: { ok: false, error: 'Service type CBP ya CTOPUP hona chahiye' } };
   if (isFailedStatus(body?.status)) {
-    return { status: 200, json: { ok: true, skipped: true, reason: 'Failed transaction wallet nahi badalti' } };
+    return { status: 200, json: { ok: true, skipped: true, success: false, reason: 'Failed transaction wallet nahi badalti' } };
   }
   const amount = requirePositivePaise(body?.amount, 'Transaction amount');
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const actualRaw = body?.actualBalance ?? body?.balance ?? body?.actual;
-  const actualEmpty = String(actualRaw ?? '').trim() === '';
-  let actualPaise = previous - amount.paise;
-  if (!actualEmpty) {
-    const actual = toPaise(actualRaw);
-    if (!actual.ok) return { status: 400, json: { ok: false, error: 'Balance (jo khate mein bacha) number mein likho' } };
-    actualPaise = actual.paise;
+  const resolved = resolveUsageCommission({
+    previousPaise: previous,
+    amountPaise: amount.paise,
+    actualRaw: body?.actualBalance ?? body?.balance ?? body?.actual,
+  });
+  if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
+  const checked = validateUsage({
+    previousPaise: previous,
+    amountPaise: amount.paise,
+    commissionPaise: resolved.commissionPaise,
+  });
+  if (!checked.ok) {
+    return { status: 400, json: { ok: false, error: checked.error, code: checked.code || '', calc: checked.calc } };
   }
-  const checked = validateUsage({ previousPaise: previous, amountPaise: amount.paise, actualPaise });
-  if (!checked.ok) return { status: 400, json: { ok: false, error: checked.error, calc: checked.calc } };
   const calc = checked.calc;
   const ref = String(body?.transactionId || body?.referenceNumber || body?.referenceId || '').trim();
   if (ref) {
@@ -271,37 +362,76 @@ async function applyUsage(db, serviceType, body, meta) {
       transactionType: 'USAGE',
     }));
     if (dup) {
-      return { status: 409, json: { ok: false, error: 'Is reference ki transaction pehle se wallet mein hai', duplicate: true } };
+      return {
+        status: 409,
+        json: {
+          ok: false,
+          success: false,
+          duplicate: true,
+          error: 'Is reference ki transaction pehle se wallet mein hai',
+          amount: rupeeNum(calc.amountPaise),
+          commission: rupeeNum(calc.commissionPaise),
+          previousBalance: rupeeNum(wallet.currentBalancePaise),
+          newBalance: rupeeNum(wallet.currentBalancePaise),
+          referenceId: ref,
+          service,
+          wallet: publicWallet(wallet),
+          ledger: publicLedger(dup),
+        },
+      };
     }
   }
   const saved = await casWriteWallet(db, wallet, previous, {
-    currentBalancePaise: calc.actualPaise,
+    currentBalancePaise: calc.newBalancePaise,
     totalDebitsPaise: (Number(wallet.totalDebitsPaise) || 0) + calc.amountPaise,
     totalTransactionAmountPaise: (Number(wallet.totalTransactionAmountPaise) || 0) + calc.amountPaise,
     totalCommissionPaise: (Number(wallet.totalCommissionPaise) || 0) + calc.commissionPaise,
   });
   if (!saved) return conflict();
-  const ledger = await insertLedger(db, wallet, {
-    transactionType: 'USAGE',
-    amountPaise: calc.amountPaise,
-    previousBalancePaise: calc.previousPaise,
-    newBalancePaise: calc.actualPaise,
-    expectedBalancePaise: calc.expectedPaise,
-    commissionPaise: calc.commissionPaise,
-    relatedTransactionId: ref || String(body?.recordId || ''),
-    referenceId: ref,
-    description: `${service} transaction ₹${calc.amount}`,
-    createdBy: meta.email || '',
-    date: String(body?.date || '').trim() || new Date().toISOString().slice(0, 10),
+  let ledger;
+  try {
+    ledger = await insertLedger(db, wallet, {
+      transactionType: 'USAGE',
+      amountPaise: calc.amountPaise,
+      previousBalancePaise: calc.previousPaise,
+      newBalancePaise: calc.newBalancePaise,
+      expectedBalancePaise: calc.expectedPaise,
+      commissionPaise: calc.commissionPaise,
+      netImpactPaise: calc.netImpactPaise,
+      relatedTransactionId: ref || String(body?.recordId || ''),
+      referenceId: ref,
+      source: service,
+      status: 'SUCCESS',
+      customerName: String(body?.name || body?.customerName || '').trim(),
+      mobile: String(body?.mobile || body?.number || '').trim(),
+      description: `${service} ₹${calc.amount} + commission ₹${calc.commission} = ${fromPaise(calc.netImpactPaise)}`,
+      createdBy: meta.email || '',
+      date: String(body?.date || '').trim() || new Date().toISOString().slice(0, 10),
+    });
+  } catch (e) {
+    await casWriteWallet(db, saved, calc.newBalancePaise, {
+      currentBalancePaise: previous,
+      totalDebitsPaise: Number(wallet.totalDebitsPaise) || 0,
+      totalTransactionAmountPaise: Number(wallet.totalTransactionAmountPaise) || 0,
+      totalCommissionPaise: Number(wallet.totalCommissionPaise) || 0,
+    });
+    throw e;
+  }
+  await logActivity(db, {
+    email: meta.email,
+    role: meta.role,
+    name: meta.name,
+    action: 'add',
+    section: 'wallet',
+    locationId: wallet.locationId,
+    locationName: wallet.locationName,
+    recordId: ledger.id,
+    ip: meta.ip || '',
+    detail: `${meta.name || meta.email || 'system'} ${service} usage ₹${calc.amount} comm ₹${calc.commission} (${calc.previous} → ${calc.newBalance}) ref ${ref || ledger.id}`,
   });
   return {
     status: 200,
-    json: {
-      ok: true,
-      wallet: publicWallet(saved),
-      ledger: publicLedger(ledger),
-      calc,
-    },
+    json: usagePayload(calc, { service, referenceId: ref || String(ledger.id), wallet: saved, ledger }),
   };
 }
 
@@ -335,6 +465,9 @@ async function reverseUsage(db, serviceType, existing, meta) {
     commissionPaise: -commission,
     relatedTransactionId: String(existing.transactionId || existing.id || ''),
     referenceId: `REV-${existing.id}`,
+    source: 'REFUND',
+    status: 'REVERSED',
+    netImpactPaise: amount - commission,
     description: `Reversal of ${service} txn ${existing.transactionId || existing.id}`,
     createdBy: meta.email || '',
   });
@@ -364,10 +497,37 @@ async function listLedger(db, serviceType, scope = {}) {
   if (!service) return { status: 400, json: { ok: false, error: 'Service type CBP ya CTOPUP hona chahiye' } };
   let q = withAlive({ ...mongoListQuery(scope), serviceType: service });
   const { applyTextSearch: search } = require('./rbac');
-  q = search(q, ['txnId', 'description', 'remark', 'referenceId', 'relatedTransactionId', 'createdBy'], scope.q);
+  q = search(q, ['txnId', 'description', 'remark', 'referenceId', 'relatedTransactionId', 'createdBy', 'customerName', 'mobile'], scope.q);
   q = applyDateRange(q, scope.from, scope.to);
   const typ = String(scope.txnType || scope.type || '').trim().toUpperCase();
-  if (typ && typ !== 'ALL') q.transactionType = typ;
+  if (typ && typ !== 'ALL') {
+    if (typ === 'TRANSACTION') q.transactionType = 'USAGE';
+    else if (typ === 'ADJUSTMENT') q.transactionType = { $in: ['REVERSAL', 'DEBIT'] };
+    else if (typ === 'COMMISSION') q.transactionType = { $in: ['USAGE', 'REVERSAL'] };
+    else q.transactionType = typ;
+  }
+  const source = String(scope.source || '').trim().toUpperCase();
+  if (source && source !== 'ALL') q.source = source;
+  const ref = String(scope.referenceId || scope.reference || '').trim();
+  if (ref) {
+    const refQ = {
+      $or: [
+        { referenceId: ref },
+        { relatedTransactionId: ref },
+        { txnId: ref },
+      ],
+    };
+    q = q.$or || q.$and ? { $and: [q, refQ] } : { ...q, ...refQ };
+  }
+  const status = String(scope.status || '').trim().toUpperCase();
+  if (status && status !== 'ALL') q.status = status;
+  const minAmt = String(scope.minAmount || '').trim();
+  const maxAmt = String(scope.maxAmount || '').trim();
+  if (minAmt || maxAmt) {
+    q.amountPaise = {};
+    if (minAmt) q.amountPaise.$gte = toPaise(minAmt).ok ? toPaise(minAmt).paise : 0;
+    if (maxAmt) q.amountPaise.$lte = toPaise(maxAmt).ok ? toPaise(maxAmt).paise : 0;
+  }
   const page = Math.max(1, Number(scope.page) || 1);
   const limit = Math.min(200, Math.max(20, Number(scope.limit) || 50));
   const skip = (page - 1) * limit;
@@ -625,6 +785,7 @@ module.exports = {
   addMoney,
   withdraw,
   applyUsage,
+  previewUsage,
   reverseUsage,
   reverseByRef,
   getService,

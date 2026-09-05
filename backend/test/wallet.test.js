@@ -133,14 +133,84 @@ test('Test 10: concurrent transactions do not corrupt wallet', async () => {
   assert.ok(wallet.currentBalancePaise >= 0);
 });
 
-test('empty remaining balance means no extra commission', async () => {
+test('empty remaining uses automatic 1% commission', async () => {
   const db = dbReady();
   const m = meta();
   await addMoney(db, 'CBP', { amount: '25100' }, m);
   const out = await applyUsage(db, 'CBP', { amount: '425', transactionId: 'NO-BAL' }, m);
   assert.equal(out.status, 200);
-  assert.equal(out.json.calc.commissionPaise, 0);
-  assert.equal(out.json.wallet.currentBalancePaise, 2467500);
+  assert.equal(out.json.calc.commissionPaise, 425);
+  assert.equal(out.json.wallet.currentBalancePaise, 2510000 - 42500 + 425);
+  assert.equal(out.json.newBalance, 24679.25);
+});
+
+test('acceptance: 1000 - 425 + 10 then -200 + 5 then +500 = 890', async () => {
+  const db = dbReady();
+  const m = meta();
+  const d1 = await addMoney(db, 'CBP', { amount: '1000' }, m);
+  assert.equal(d1.json.wallet.currentBalancePaise, 100000);
+  const cbp = await applyUsage(db, 'CBP', { amount: '425', actualBalance: '585', transactionId: 'ACC-CBP' }, m);
+  assert.equal(cbp.status, 200, cbp.json && cbp.json.error);
+  assert.equal(cbp.json.success, true);
+  assert.equal(cbp.json.amount, 425);
+  assert.equal(cbp.json.commission, 10);
+  assert.equal(cbp.json.previousBalance, 1000);
+  assert.equal(cbp.json.newBalance, 585);
+  assert.equal(cbp.json.service, 'CBP');
+  const top = await applyUsage(db, 'CBP', { amount: '200', actualBalance: '390', transactionId: 'ACC-TOP' }, m);
+  assert.equal(top.status, 200, top.json && top.json.error);
+  assert.equal(top.json.newBalance, 390);
+  assert.equal(top.json.commission, 5);
+  const more = await addMoney(db, 'CBP', { amount: '500' }, m);
+  assert.equal(more.json.wallet.currentBalancePaise, 89000);
+});
+
+test('acceptance: CTOPUP 585 - 200 + 5 = 390', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CTOPUP', { amount: '585' }, m);
+  const out = await applyUsage(db, 'CTOPUP', { amount: '200', actualBalance: '390', transactionId: 'T3' }, m);
+  assert.equal(out.status, 200);
+  assert.equal(out.json.newBalance, 390);
+  assert.equal(out.json.commission, 5);
+  assert.equal(out.json.service, 'CTOPUP');
+});
+
+test('acceptance: CBP 1000 - 425 + 10 = 585', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '1000' }, m);
+  const out = await applyUsage(db, 'CBP', { amount: '425', actualBalance: '585', transactionId: 'T2' }, m);
+  assert.equal(out.status, 200);
+  assert.equal(out.json.newBalance, 585);
+  assert.equal(out.json.commission, 10);
+  assert.equal(out.json.wallet.currentBalancePaise, 58500);
+});
+
+test('acceptance: insufficient balance rejects and wallet stays 300', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '300' }, m);
+  const out = await applyUsage(db, 'CBP', { amount: '425', actualBalance: '0', transactionId: 'LOW' }, m);
+  assert.equal(out.status, 400);
+  assert.match(String(out.json.error), /Insufficient/i);
+  const wallet = await ensureWallet(db, 'CBP');
+  assert.equal(wallet.currentBalancePaise, 30000);
+  assert.equal(wallet.totalCommissionPaise, 0);
+});
+
+test('acceptance: duplicate reference does not change wallet', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '1000' }, m);
+  const first = await applyUsage(db, 'CBP', { amount: '425', actualBalance: '585', transactionId: 'DUP-REF' }, m);
+  const second = await applyUsage(db, 'CBP', { amount: '425', actualBalance: '585', transactionId: 'DUP-REF' }, m);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 409);
+  assert.equal(second.json.duplicate, true);
+  const wallet = await ensureWallet(db, 'CBP');
+  assert.equal(wallet.currentBalancePaise, 58500);
+  assert.equal(wallet.totalCommissionPaise, 1000);
 });
 
 test('zero commission usage', async () => {
@@ -209,6 +279,19 @@ test('CBP opening 25100 and old rows get 1% auto commission from remaining', asy
   assert.equal(rows[1].commissionPaise, 500);
   assert.equal(Number(wallet.currentBalancePaise), rows[1].actualBalancePaise);
   assert.equal(Number(wallet.totalCommissionPaise), 925);
+});
+
+test('successful CBP amount cannot be edited, only reversed', async () => {
+  const db = dbReady();
+  const m = meta();
+  await addMoney(db, 'CBP', { amount: '1000' }, m);
+  const added = await cbc.add(db, { amount: '425', actualBalance: '585', transactionId: 'LOCK1' }, m);
+  assert.equal(added.status, 200);
+  const edit = await cbc.update(db, added.json.row.id, { amount: '200', actualBalance: '800' }, m, async () => null);
+  assert.equal(edit.status, 400);
+  assert.match(String(edit.json.error), /edit nahi/i);
+  const wallet = await ensureWallet(db, 'CBP');
+  assert.equal(wallet.currentBalancePaise, 58500);
 });
 
 test('record add uses backend commission not frontend value', async () => {

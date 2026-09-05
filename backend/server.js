@@ -38,6 +38,7 @@ const {
   addMoney,
   withdraw,
   applyUsage,
+  previewUsage,
   reverseByRef,
   snapshotBoth,
   migrateLegacy,
@@ -133,12 +134,13 @@ function writeMeta(req) {
       role: 'owner',
       name: req.user.name || '',
       userId: req.user.id || null,
+      ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim(),
     },
   };
 }
 
 app.get('/api/ready', (_req, res) => {
-  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-10' });
+  res.json({ ok: true, service: 'bsnl-sim-api', version: 'khatu-11' });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -357,6 +359,14 @@ app.post('/api/wallet/:service/withdraw', requireUser, async (req, res) => {
     const w = writeMeta(req);
     if (!w.ok) return res.status(w.status).json({ ok: false, error: w.error });
     send(res, await withdraw(await getDb(), serviceParam(req), req.body, w.meta));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+app.post('/api/wallet/:service/preview', requireUser, async (req, res) => {
+  try {
+    send(res, await previewUsage(await getDb(), serviceParam(req), req.body));
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e.message || e) });
   }

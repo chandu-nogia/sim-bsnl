@@ -70,6 +70,7 @@ class _RecordsPageState extends State<RecordsPage> {
   DateTime? _to;
   num _wallet = 0;
   num _remaining = 0;
+  num _used = 0;
   num _commission = 0;
 
   bool get _hasStatus {
@@ -141,8 +142,9 @@ class _RecordsPageState extends State<RecordsPage> {
         _total = out.total;
         _page = out.page;
         _limit = out.limit == 0 ? _limit : out.limit;
-        _wallet = out.walletAmount;
+        _wallet = out.totalAdded > 0 ? out.totalAdded : out.walletAmount;
         _remaining = out.remainingBalance;
+        _used = out.totalUsed;
         _commission = out.totalCommission;
       });
     } catch (e) {
@@ -186,7 +188,14 @@ class _RecordsPageState extends State<RecordsPage> {
       final id = existing == null ? null : _idOf(existing);
       final loc = widget.auth.effectiveLocationId;
       if (existing == null) {
-        await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: loc);
+        final saved = await widget.auth.api.addRow(widget.auth.apiBase, widget.path, body, locationId: loc);
+        if (mounted && saved['newBalance'] != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              'Amount ${rupee(asNum(saved['amount']))}  ·  Commission +${rupee(asNum(saved['commission']))}  ·  Net ${rupee(asNum(saved['netImpact']))}  ·  Balance ${rupee(asNum(saved['newBalance']))}',
+            ),
+          ));
+        }
       } else {
         if (id == null) throw ApiException('Entry id nahi mili');
         await widget.auth.api.updateRow(widget.auth.apiBase, widget.path, id, body, locationId: loc);
@@ -308,7 +317,7 @@ class _RecordsPageState extends State<RecordsPage> {
                   child: Text(
                     widget.commissionModule == null
                         ? 'Balance ${rupee(_remaining)}   ·   Extra commission ${rupee(_commission)}   ·   Added ${rupee(_wallet)}'
-                        : 'Opening ${rupee(_wallet)}   ·   Bacha ${rupee(_remaining)}   ·   Commission ${rupee(_commission)}',
+                        : 'Balance ${rupee(_remaining)}   ·   Added ${rupee(_wallet)}   ·   Used ${rupee(_used)}   ·   Commission ${rupee(_commission)}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark),
                   ),
                 ),
@@ -586,6 +595,12 @@ class _RecordFormPageState extends State<RecordFormPage> {
   late final Map<String, DateTime> _dates;
   late final Map<String, String> _choices;
   num _previous = 0;
+  Map<String, dynamic>? _preview;
+  Timer? _previewDebounce;
+  bool get _moneyLocked {
+    final status = '${widget.initial?['transactionStatus'] ?? ''}';
+    return widget.initial != null && status == 'SUCCESS';
+  }
 
   @override
   void initState() {
@@ -604,14 +619,22 @@ class _RecordFormPageState extends State<RecordFormPage> {
         if (f.kind == RecordFieldKind.choice)
           f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
     };
-    _ctrls['amount']?.addListener(() {
-      if (mounted) setState(() {});
-    });
-    _ctrls['balance']?.addListener(() {
-      if (mounted) setState(() {});
-    });
+    _ctrls['amount']?.addListener(_onMoneyChanged);
+    _ctrls['balance']?.addListener(_onMoneyChanged);
     _previous = asNum(widget.initial?['previousBalance']);
     _loadWallet();
+  }
+
+  void _onMoneyChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _queuePreview();
+  }
+
+  void _queuePreview() {
+    if (widget.commissionModule == null || _moneyLocked) return;
+    _previewDebounce?.cancel();
+    _previewDebounce = Timer(const Duration(milliseconds: 350), _loadPreview);
   }
 
   Future<void> _loadWallet() async {
@@ -621,19 +644,44 @@ class _RecordFormPageState extends State<RecordFormPage> {
       final json = await auth.api.serviceWallet(auth.apiBase, widget.commissionModule!);
       if (!mounted) return;
       setState(() => _previous = asNum(json['currentBalance'] ?? json['currentBalanceNum']));
+      _queuePreview();
+    } catch (_) {}
+  }
+
+  Future<void> _loadPreview() async {
+    final auth = widget.auth;
+    if (auth == null || widget.commissionModule == null || _amount <= 0) return;
+    try {
+      final json = await auth.api.previewUsage(
+        auth.apiBase,
+        widget.commissionModule!,
+        amount: _ctrls['amount']?.text.trim() ?? '',
+        actualBalance: _ctrls['balance']?.text.trim() ?? '',
+      );
+      if (!mounted) return;
+      setState(() => _preview = json);
     } catch (_) {}
   }
 
   num get _amount => asNum(_ctrls['amount']?.text);
-  num get _expected => _previous - _amount;
-  num get _actual {
-    final raw = _ctrls['balance']?.text.trim() ?? '';
-    if (raw.isEmpty) return _expected;
-    return asNum(raw);
-  }
   num get _previewCommission {
-    final extra = _actual - _expected;
-    return extra < 0 ? 0 : extra;
+    if (_preview != null) return asNum(_preview?['commission']);
+    if (_moneyLocked) return asNum(widget.initial?['commission'] ?? widget.initial?['commissionNum']);
+    return 0;
+  }
+  num get _previewNew {
+    if (_preview != null) return asNum(_preview?['newBalance']);
+    if (_moneyLocked) return asNum(widget.initial?['actualBalance'] ?? widget.initial?['balance']);
+    return _previous - _amount + _previewCommission;
+  }
+  num get _previewNet {
+    if (_preview != null) return asNum(_preview?['netImpact']);
+    return -_amount + _previewCommission;
+  }
+  num get _previewPrev {
+    if (_preview != null) return asNum(_preview?['previousBalance']);
+    if (_moneyLocked) return asNum(widget.initial?['previousBalance']);
+    return _previous;
   }
 
   String _choiceValue(RecordField f, String raw) {
@@ -643,6 +691,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
 
   @override
   void dispose() {
+    _previewDebounce?.cancel();
     for (final c in _ctrls.values) {
       c.dispose();
     }
@@ -698,14 +747,24 @@ class _RecordFormPageState extends State<RecordFormPage> {
             const SizedBox(height: 16),
             if (widget.commissionModule != null) ...[
               Text(
-                'Amount = khate se jo kata. Balance = jo bacha. Extra bacha to commission automatic add hogi. Commission type nahi karni.',
+                'New balance = Current wallet − Amount + Commission. Commission automatic hai, type nahi kar sakte.',
                 style: const TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Pehle ${rupee(_previous)}  −  Amount ${rupee(_amount)}  =  ${rupee(_expected)}   ·   Extra commission ${rupee(_previewCommission)}',
-                style: const TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w700),
+              const SizedBox(height: 10),
+              _CalcBox(
+                previous: _previewPrev,
+                amount: _amount,
+                commission: _previewCommission,
+                net: _previewNet,
+                next: _preview == null ? (_previous - _amount + _previewCommission) : _previewNew,
               ),
+              if (_moneyLocked) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Successful transaction ki amount/commission lock hai. Correction ke liye Reverse use karo.',
+                  style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w700),
+                ),
+              ],
               const SizedBox(height: 12),
             ],
             for (final f in widget.fields)
@@ -734,29 +793,30 @@ class _RecordFormPageState extends State<RecordFormPage> {
                     ),
                   RecordFieldKind.text => TextField(
                       controller: _ctrls[f.key],
+                      readOnly: _moneyLocked && f.key == 'amount',
                       keyboardType: f.keyboard,
                       decoration: InputDecoration(
                         labelText: f.label,
-                        helperText: f.key == 'amount' && widget.commissionModule != null ? 'Khate se jo amount kata' : null,
+                        helperText: f.key == 'amount' && widget.commissionModule != null ? 'Wallet se jo amount kata' : null,
                       ),
                     ),
                   RecordFieldKind.actualBalance => TextField(
                       controller: _ctrls[f.key],
+                      readOnly: _moneyLocked,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       decoration: InputDecoration(
                         labelText: f.label,
-                        helperText: 'Khate mein jo amount bacha. Extra bacha to commission auto.',
+                        helperText: 'Optional. BSNL remaining likho to commission usse nikalegi, warna 1% automatic.',
                         prefixText: '₹ ',
-                        hintText: _amount > 0 ? rupee(_expected) : null,
                       ),
                     ),
                   RecordFieldKind.commission => InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: '${f.label} (automatic)',
+                      decoration: const InputDecoration(
+                        labelText: 'Commission (automatic)',
                         suffixText: 'Auto',
-                        helperText: 'Jo extra add hua. Amount nahi. Type mat karo.',
+                        helperText: 'Backend se aati hai. Type / delete nahi kar sakte.',
                         filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
+                        fillColor: Color(0xFFF8FAFC),
                       ),
                       child: Text(
                         rupee(_previewCommission),
@@ -779,6 +839,54 @@ class _RecordFormPageState extends State<RecordFormPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CalcBox extends StatelessWidget {
+  const _CalcBox({
+    required this.previous,
+    required this.amount,
+    required this.commission,
+    required this.net,
+    required this.next,
+  });
+  final num previous;
+  final num amount;
+  final num commission;
+  final num net;
+  final num next;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget line(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.w800, color: BsnlColors.navyDark)),
+          ],
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line('Current wallet', rupee(previous)),
+          line('Transaction amount', rupee(amount)),
+          line('Commission', '+${rupee(commission)}'),
+          line('Net wallet change', rupee(net)),
+          line('New balance', rupee(next)),
+        ],
       ),
     );
   }

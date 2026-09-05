@@ -2,7 +2,27 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { calculateUsageCommission, validateUsage, toPaise, fromPaise } = require('../lib/money');
+const {
+  calculateUsageCommission,
+  computeUsage,
+  validateUsage,
+  resolveUsageCommission,
+  configuredCommissionPaise,
+  toPaise,
+  fromPaise,
+} = require('../lib/money');
+
+test('formula: newBalance = oldBalance - amount + commission', () => {
+  const calc = computeUsage({
+    previousPaise: 100000,
+    amountPaise: 42500,
+    commissionPaise: 1000,
+  });
+  assert.equal(calc.newBalancePaise, 58500);
+  assert.equal(calc.netImpactPaise, -41500);
+  assert.equal(calc.newBalance, '585.00');
+  assert.equal(calc.formula, 'newBalance = oldBalance - amount + commission');
+});
 
 test('Test 1: zero commission', () => {
   const calc = calculateUsageCommission({
@@ -12,6 +32,7 @@ test('Test 1: zero commission', () => {
   });
   assert.equal(calc.expectedPaise, 2467500);
   assert.equal(calc.commissionPaise, 0);
+  assert.equal(calc.newBalancePaise, 2467500);
   assert.equal(calc.amount, '425.00');
   assert.equal(calc.commission, '0.00');
 });
@@ -27,6 +48,7 @@ test('Test 2: commission 125', () => {
   assert.equal(calc.amount, '425.00');
   assert.equal(calc.commission, '125.00');
   assert.equal(calc.actual, '24800.00');
+  assert.equal(calc.newBalancePaise, 2480000);
 });
 
 test('Test 3: second transaction commission 150', () => {
@@ -38,6 +60,27 @@ test('Test 3: second transaction commission 150', () => {
   assert.equal(calc.expectedPaise, 2430000);
   assert.equal(calc.commissionPaise, 15000);
   assert.equal(calc.commission, '150.00');
+});
+
+test('empty remaining uses configured 1% commission', () => {
+  const resolved = resolveUsageCommission({
+    previousPaise: 100000,
+    amountPaise: 42500,
+    actualRaw: '',
+  });
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.commissionPaise, 425);
+  assert.equal(configuredCommissionPaise(42500), 425);
+});
+
+test('insufficient balance is rejected', () => {
+  const checked = validateUsage({
+    previousPaise: 30000,
+    amountPaise: 42500,
+    commissionPaise: 1000,
+  });
+  assert.equal(checked.ok, false);
+  assert.equal(checked.code, 'INSUFFICIENT_BALANCE');
 });
 
 test('paise rounding stays exact', () => {

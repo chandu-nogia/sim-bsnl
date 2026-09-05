@@ -223,6 +223,10 @@ class _DashboardHomeState extends State<DashboardHome> {
           const SizedBox(height: 10),
           _RecentSplit(cbp: asMaps(_data['recentCbp']), top: asMaps(_data['recentCtopup'])),
           const SizedBox(height: 20),
+          _SectionTitle('Recent wallet transactions', 'Date · Service · Amount · Commission · Net · Balance'),
+          const SizedBox(height: 10),
+          _RecentWalletTable(rows: asMaps(_data['recentWallet'])),
+          const SizedBox(height: 20),
           _SectionTitle('Recent wallet entries', 'Credits, usage, reversals'),
           const SizedBox(height: 10),
           _RecentSplit(cbp: asMaps(_data['recentCbpLedger']), top: asMaps(_data['recentCtopupLedger']), ledger: true),
@@ -413,6 +417,54 @@ class _RecentSplit extends StatelessWidget {
         }
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: left), const SizedBox(width: 12), Expanded(child: right)]);
       },
+    );
+  }
+}
+
+class _RecentWalletTable extends StatelessWidget {
+  const _RecentWalletTable({required this.rows});
+  final List<Map<String, dynamic>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(14),
+          child: Text('No recent wallet transactions', style: TextStyle(color: BsnlColors.muted, fontWeight: FontWeight.w600)),
+        ),
+      );
+    }
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(BsnlColors.navy),
+          headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          columns: const [
+            DataColumn(label: Text('Date')),
+            DataColumn(label: Text('Service')),
+            DataColumn(label: Text('Amount'), numeric: true),
+            DataColumn(label: Text('Commission'), numeric: true),
+            DataColumn(label: Text('Net Impact'), numeric: true),
+            DataColumn(label: Text('Balance'), numeric: true),
+          ],
+          rows: [
+            for (final r in rows.take(10))
+              DataRow(
+                cells: [
+                  DataCell(Text('${r['date'] ?? ''}')),
+                  DataCell(Text('${r['service'] ?? r['serviceType'] ?? r['source'] ?? ''}')),
+                  DataCell(Text(rupee(asNum(r['amount'])))),
+                  DataCell(Text(rupee(asNum(r['commission'])))),
+                  DataCell(Text(rupee(asNum(r['netImpact'])))),
+                  DataCell(Text(rupee(asNum(r['newBalance'] ?? r['balanceAfter'])))),
+                ],
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -288,7 +288,7 @@ class ApiService {
     return out.rows;
   }
 
-  Future<void> addRow(String base, String path, Map<String, dynamic> body, {int? locationId}) async {
+  Future<Map<String, dynamic>> addRow(String base, String path, Map<String, dynamic> body, {int? locationId}) async {
     final json = await _send(
       http.post(
         _uri(base, path),
@@ -300,6 +300,7 @@ class ApiService {
       ),
     );
     if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Add failed'}');
+    return json;
   }
 
   Future<void> updateRow(String base, String path, int id, Map<String, dynamic> body, {int? locationId}) async {
@@ -395,6 +396,21 @@ class ApiService {
     final s = service.trim().toLowerCase();
     if (s == 'ctopup' || s == 'c-topup' || s == 'topup') return 'ctopup';
     return 'cbp';
+  }
+
+  Future<Map<String, dynamic>> previewUsage(String base, String service, {required String amount, String actualBalance = ''}) async {
+    final json = await _send(
+      http.post(
+        _uri(base, '/api/wallet/${_servicePath(service)}/preview'),
+        headers: _headers(),
+        body: jsonEncode({
+          'amount': amount,
+          if (actualBalance.trim().isNotEmpty) 'actualBalance': actualBalance.trim(),
+        }),
+      ),
+    );
+    if (json['ok'] != true) throw ApiException('${json['error'] ?? 'Preview fail'}');
+    return json;
   }
 
   Future<Map<String, dynamic>> serviceWallet(String base, String service) async {
