@@ -620,7 +620,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
           f.key: _choiceValue(f, '${widget.initial?[f.key] ?? ''}'),
     };
     _ctrls['amount']?.addListener(_onMoneyChanged);
-    _ctrls['balance']?.addListener(_onMoneyChanged);
     _previous = asNum(widget.initial?['previousBalance']);
     _loadWallet();
   }
@@ -656,7 +655,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
         auth.apiBase,
         widget.commissionModule!,
         amount: _ctrls['amount']?.text.trim() ?? '',
-        actualBalance: _ctrls['balance']?.text.trim() ?? '',
       );
       if (!mounted) return;
       setState(() => _preview = json);
@@ -711,11 +709,9 @@ class _RecordFormPageState extends State<RecordFormPage> {
             RecordFieldKind.commission => '',
           },
     };
-    final actual = out['balance'] ?? out['actualBalance'] ?? '';
-    if (actual.isNotEmpty) {
-      out['actualBalance'] = actual;
-      out['balance'] = actual;
-    }
+    out.remove('balance');
+    out.remove('actualBalance');
+    out.remove('commission');
     return out;
   }
 
@@ -747,7 +743,7 @@ class _RecordFormPageState extends State<RecordFormPage> {
             const SizedBox(height: 16),
             if (widget.commissionModule != null) ...[
               Text(
-                'New balance = Current wallet − Amount + Commission. Commission automatic hai, type nahi kar sakte.',
+                'New wallet = Current − Amount + 1% commission. Balance type mat karo — usse wallet nahi badhega.',
                 style: const TextStyle(color: BsnlColors.navy, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),

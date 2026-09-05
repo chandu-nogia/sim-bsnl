@@ -303,11 +303,7 @@ async function previewUsage(db, serviceType, body) {
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const resolved = resolveUsageCommission({
-    previousPaise: previous,
-    amountPaise: amount.paise,
-    actualRaw: body?.actualBalance ?? body?.balance ?? body?.actual,
-  });
+  const resolved = resolveUsageCommission({ amountPaise: amount.paise });
   if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
   const checked = validateUsage({
     previousPaise: previous,
@@ -338,11 +334,7 @@ async function applyUsage(db, serviceType, body, meta = {}) {
   if (!amount.ok) return { status: 400, json: { ok: false, error: amount.error } };
   const wallet = await ensureWallet(db, service);
   const previous = Number(wallet.currentBalancePaise) || 0;
-  const resolved = resolveUsageCommission({
-    previousPaise: previous,
-    amountPaise: amount.paise,
-    actualRaw: body?.actualBalance ?? body?.balance ?? body?.actual,
-  });
+  const resolved = resolveUsageCommission({ amountPaise: amount.paise });
   if (!resolved.ok) return { status: 400, json: { ok: false, error: resolved.error } };
   const checked = validateUsage({
     previousPaise: previous,

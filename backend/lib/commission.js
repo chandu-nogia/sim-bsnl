@@ -14,7 +14,7 @@ function publicConfig() {
     commissionMode: 'balance-minus-amount-plus-commission',
     formula: 'newBalance = oldBalance - amount + commission',
     commissionPercent: 1,
-    commissionNote: 'Commission backend se automatic. Frontend value ignore hoti hai.',
+    commissionNote: 'Commission 1% automatic. Remaining/Balance type karne se wallet nahi badhta.',
     ctopupTypes: ['Recharge', 'Activation', 'Replacement', 'Port', 'Other'],
   };
 }
@@ -31,9 +31,7 @@ function applyCommissionFromBalances(row, previousPaise) {
     return row;
   }
   const resolved = resolveUsageCommission({
-    previousPaise: previousPaise || 0,
     amountPaise: amount.paise,
-    actualRaw: row.actualBalance ?? row.balance,
   });
   const calc = computeUsage({
     previousPaise: previousPaise || 0,

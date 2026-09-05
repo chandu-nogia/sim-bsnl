@@ -26,7 +26,7 @@ class CbcPage extends StatelessWidget {
         RecordField('mobile', 'Mobile Number'),
         RecordField('landline', 'Landline No.'),
         RecordField('amount', 'Amount', keyboard: TextInputType.numberWithOptions(decimal: true)),
-        RecordField('balance', 'BSNL remaining (optional)', kind: RecordFieldKind.actualBalance),
+        RecordField('balance', 'New wallet', kind: RecordFieldKind.computed),
         RecordField('commission', 'Commission', kind: RecordFieldKind.commission),
         RecordField('transactionId', 'Transaction ID'),
         RecordField('note', 'Note'),

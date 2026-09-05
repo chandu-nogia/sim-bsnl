@@ -73,6 +73,24 @@ test('empty remaining uses configured 1% commission', () => {
   assert.equal(configuredCommissionPaise(42500), 425);
 });
 
+test('typed remaining cannot change commission', () => {
+  const resolved = resolveUsageCommission({
+    previousPaise: 2000000,
+    amountPaise: 42500,
+    actualRaw: '25100',
+  });
+  assert.equal(resolved.commissionPaise, 425);
+});
+
+test('usage cannot increase wallet', () => {
+  const checked = validateUsage({
+    previousPaise: 2000000,
+    amountPaise: 42500,
+    commissionPaise: 60000,
+  });
+  assert.equal(checked.ok, false);
+});
+
 test('insufficient balance is rejected', () => {
   const checked = validateUsage({
     previousPaise: 30000,

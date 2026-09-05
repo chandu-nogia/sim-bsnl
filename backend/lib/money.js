@@ -72,25 +72,13 @@ function computeUsage({ previousPaise, amountPaise, commissionPaise }) {
 }
 
 /**
- * Derive commission from a remaining/actual balance, or fall back to configured rate.
- * Never uses a client-supplied commission value.
+ * Live CBP/CTOPUP commission is backend-only (1%).
+ * Client remaining/actual/commission is ignored so a typed opening balance
+ * cannot credit the wallet.
  */
-function resolveUsageCommission({ previousPaise, amountPaise, actualRaw }) {
-  const previous = Number(previousPaise) || 0;
+function resolveUsageCommission({ amountPaise }) {
   const amount = Number(amountPaise) || 0;
-  const raw = actualRaw === undefined || actualRaw === null ? '' : String(actualRaw).trim();
-  if (raw === '') {
-    return { ok: true, commissionPaise: configuredCommissionPaise(amount), source: 'configured' };
-  }
-  const actual = toPaise(raw);
-  if (!actual.ok) {
-    return { ok: false, error: 'Balance (jo khate mein bacha) number mein likho', commissionPaise: 0 };
-  }
-  return {
-    ok: true,
-    commissionPaise: actual.paise - (previous - amount),
-    source: 'actual-remaining',
-  };
+  return { ok: true, commissionPaise: configuredCommissionPaise(amount), source: 'configured' };
 }
 
 function validateUsage({ previousPaise, amountPaise, actualPaise, commissionPaise }) {
@@ -123,6 +111,13 @@ function validateUsage({ previousPaise, amountPaise, actualPaise, commissionPais
   }
   if (calc.newBalancePaise < 0) {
     return { ok: false, error: 'Wallet balance invalid ho jayegi', calc };
+  }
+  if (calc.newBalancePaise > calc.previousPaise) {
+    return {
+      ok: false,
+      error: 'CBP/CTOPUP wallet badha nahi sakti. Amount deduct + commission automatic.',
+      calc,
+    };
   }
   return { ok: true, calc };
 }

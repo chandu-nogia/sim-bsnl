@@ -180,7 +180,6 @@ async function applyRowUsage(db, section, row, meta, ref) {
   }
   const usage = await applyUsage(db, section, {
     amount: row.amount,
-    actualBalance: row.actualBalance || row.balance,
     transactionId: ref,
     recordId: ref,
     status: row.status,
